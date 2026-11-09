@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runs</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h1>Runs</h1>
+  <form id="key-form">
+    <label>API key <input id="key" type="password" autocomplete="off" required></label>
+    <button>Use key</button>
+  </form>
+  <form id="new-run" hidden>
+    <label>New run <input id="run-name" required maxlength="200"></label>
+    <button>Create</button>
+  </form>
+  <p id="msg" role="status"></p>
+  <table id="runs" hidden>
+    <thead><tr><th>Name</th><th>Points</th><th>Conflicts</th><th>Created</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</main>
+<script src="/static/common.js"></script>
+<script>
+const msg = document.getElementById('msg');
+const keyInput = document.getElementById('key');
+
+async function load() {
+  const res = await api('/api/runs');
+  if (res.status === 401) { msg.textContent = 'Key rejected.'; return; }
+  const { runs } = await res.json();
+  const tbody = document.querySelector('#runs tbody');
+  tbody.replaceChildren(...runs.map(r => {
+    const tr = document.createElement('tr');
+    tr.dataset.testid = 'run-row';
+    const a = document.createElement('a');
+    a.href = '/runs/' + r.id;
+    a.textContent = r.name;
+    const cells = [a, String(r.last_seq), String(r.conflicts), new Date(r.created_at).toLocaleString()];
+    for (const c of cells) {
+      const td = document.createElement('td');
+      typeof c === 'string' ? (td.textContent = c) : td.append(c);
+      tr.append(td);
+    }
+    return tr;
+  }));
+  document.getElementById('runs').hidden = false;
+  document.getElementById('new-run').hidden = false;
+  msg.textContent = runs.length ? '' : 'No runs yet.';
+}
+
+document.getElementById('key-form').addEventListener('submit', e => {
+  e.preventDefault();
+  setKey(keyInput.value.trim());
+  load();
+});
+document.getElementById('new-run').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = document.getElementById('run-name').value.trim();
+  await api('/api/runs', { method: 'POST', body: JSON.stringify({ name }) });
+  load();
+});
+if (getKey()) load();
+</script>
+</body>
+</html>

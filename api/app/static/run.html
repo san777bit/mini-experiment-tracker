@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <p><a href="/">All runs</a></p>
+  <h1 id="title">Run</h1>
+  <div class="stats">
+    <div class="stat"><b data-testid="conn">connecting</b><span>stream</span></div>
+    <div class="stat"><b data-testid="applied-seq">0</b><span>applied seq</span></div>
+    <div class="stat"><b data-testid="server-seq">?</b><span>stored seq</span></div>
+    <div class="stat"><b data-testid="conflicts">0</b><span>conflicts (rejected)</span></div>
+    <div class="stat"><b data-testid="reconnects">0</b><span>reconnects</span></div>
+    <div class="stat"><b data-testid="gaps">0</b><span>gaps detected</span></div>
+    <div class="stat"><b data-testid="dups">0</b><span>repeats ignored</span></div>
+  </div>
+  <table>
+    <thead><tr><th>Metric</th><th>Points</th><th>Max step</th><th>Value at max step</th><th>Sum</th></tr></thead>
+    <tbody id="metrics"></tbody>
+  </table>
+  <div class="charts" id="charts"></div>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/run.js"></script>
+</body>
+</html>

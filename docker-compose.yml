@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: owner
+      POSTGRES_PASSWORD: owner
+      POSTGRES_DB: tracker
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "55432:5432"   # tests read the DB directly to compare with the page
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U owner -d tracker"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: ./api
+    environment:
+      DATABASE_URL: postgresql://app:app@db:5432/tracker
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}   # 1 process saturates one core at ~320-410 events/s
+      DB_POOL_MAX: "10"                        # per process: 4 x 10 + 4 listeners < max_connections 100
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  # Fault injection between test clients and the API (latency, resets, cuts).
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    volumes:
+      - ./toxiproxy.json:/config/toxiproxy.json:ro
+    depends_on:
+      - api
+    ports:
+      - "8474:8474"    # toxiproxy control API
+      - "18000:18000"  # proxy "api": browser / stream readers
+      - "18001:18001"  # proxy "ingest": metric producers (unreliable network)

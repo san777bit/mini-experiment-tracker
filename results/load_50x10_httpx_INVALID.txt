@@ -1,0 +1,43 @@
+﻿{
+  "config": {
+    "runs": 50,
+    "rate": 10.0,
+    "batch": 1,
+    "duration": 60.0,
+    "drain": 5.0,
+    "viewers": true
+  },
+  "wall_s": 60.9,
+  "events_sent": 3229,
+  "events_stored": 3229,
+  "achieved_events_per_s": 53.0,
+  "requests": 3229,
+  "request_errors": {},
+  "schedule_misses": 3229,
+  "ingest_ms": {
+    "p50": 636.4,
+    "p95": 2785.3,
+    "p99": 4209.8,
+    "max": 7591.8
+  },
+  "e2e_ms": {
+    "p50": 603.0,
+    "p95": 2761.5,
+    "p99": 4149.8,
+    "max": 7556.6
+  },
+  "viewer_lost_events": 0,
+  "viewer_duplicate_events": 0,
+  "docker_stats_samples": [
+    "taskforwork-api-1 17.47% 43.45MiB / 7.758GiB | taskforwork-db-1 14.85% 120.6MiB / 7.758GiB",
+    "taskforwork-api-1 24.53% 43.47MiB / 7.758GiB | taskforwork-db-1 23.28% 120.8MiB / 7.758GiB",
+    "taskforwork-api-1 25.29% 43.02MiB / 7.758GiB | taskforwork-db-1 21.14% 121.3MiB / 7.758GiB",
+    "taskforwork-api-1 25.06% 43.52MiB / 7.758GiB | taskforwork-db-1 24.41% 121.5MiB / 7.758GiB",
+    "taskforwork-api-1 24.49% 43.1MiB / 7.758GiB | taskforwork-db-1 23.52% 121.6MiB / 7.758GiB",
+    "taskforwork-api-1 24.99% 43.54MiB / 7.758GiB | taskforwork-db-1 20.67% 121.8MiB / 7.758GiB",
+    "taskforwork-api-1 25.67% 43.45MiB / 7.758GiB | taskforwork-db-1 20.61% 122.1MiB / 7.758GiB",
+    "taskforwork-api-1 23.88% 43.36MiB / 7.758GiB | taskforwork-db-1 22.72% 122.4MiB / 7.758GiB",
+    "taskforwork-api-1 27.57% 43.3MiB / 7.758GiB | taskforwork-db-1 27.87% 122.1MiB / 7.758GiB",
+    "taskforwork-api-1 0.38% 43.45MiB / 7.758GiB | taskforwork-db-1 0.38% 122.3MiB / 7.758GiB"
+  ]
+}

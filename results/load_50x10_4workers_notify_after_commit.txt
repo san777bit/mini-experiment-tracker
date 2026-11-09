@@ -1,0 +1,31 @@
+﻿{
+  "config": {
+    "runs": 50,
+    "rate": 10.0,
+    "batch": 1,
+    "duration": 60.0,
+    "drain": 5.0,
+    "viewers": 1
+  },
+  "target_events_per_s": 500.0,
+  "achieved_events_per_s": 499.5,
+  "events_sent": 30000,
+  "events_stored": 30000,
+  "request_errors": {},
+  "schedule_misses": 10633,
+  "ingest_ms": {
+    "p50": 53.5,
+    "p95": 161.5,
+    "p99": 253.0,
+    "max": 718.1
+  },
+  "e2e_ms": {
+    "p50": 64.6,
+    "p95": 187.0,
+    "p99": 294.2,
+    "max": 783.8
+  },
+  "viewer_events": 30000,
+  "viewer_lost_events": 0,
+  "viewer_duplicate_events": 0
+}

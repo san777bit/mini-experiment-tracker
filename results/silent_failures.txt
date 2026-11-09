@@ -1,0 +1,19 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0
+rootdir: C:\Users\pgrga\OneDrive\Документы\taskforwork
+configfile: pytest.ini
+plugins: anyio-4.16.0, hypothesis-6.170.15, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 8 items
+
+tests\test_silent_failures.py [reconnect] writers=16 events=1920 reader_events=1920
+.[dups] accepted=100 duplicates=1900
+.[slow] api mem before=42.3MiB / 7.758GiB while stalled=42.39MiB / 7.758GiB; received=20000
+.[partial] key='bad\x00key' status=422 body={"error":"invalid","details":[{"loc":["body","events",2,"key"],"msg":"Value error, key must not contain control characters"}]}
+.[partial] key='bad\ud800key' status=422 body={"error":"invalid","details":[{"loc":["body","events",2,"key"],"msg":"Input should be a valid string, unable to parse raw data as a unicode string"}]}
+.[rotate] stream opened with old key closed 5.5s after rotation; events=['hello', 'status', 'revoked']
+.[listener] killed=1 delivered=50 in 3.3s listener_connects=2 polls=5
+.[crash] sent=11 acked=7 stored_batches=7 partial=0 stored_without_ack=0
+.
+
+============================= 8 passed in 51.25s ==============================

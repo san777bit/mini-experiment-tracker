@@ -1,0 +1,14 @@
+[
+  {
+    "name": "api",
+    "listen": "0.0.0.0:18000",
+    "upstream": "api:8000",
+    "enabled": true
+  },
+  {
+    "name": "ingest",
+    "listen": "0.0.0.0:18001",
+    "upstream": "api:8000",
+    "enabled": true
+  }
+]
