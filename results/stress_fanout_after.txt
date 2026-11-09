@@ -1,0 +1,24 @@
+﻿{
+  "config": {
+    "viewers": 1000,
+    "rate": 10.0,
+    "seconds": 20.0,
+    "drain": 5
+  },
+  "viewers_connected": 1000,
+  "connect_all_s": 1.5,
+  "events_produced": 166,
+  "viewer_events_expected": 166000,
+  "viewer_events_lost": 0,
+  "e2e_ms": {
+    "p50": 63.9,
+    "p95": 109.8,
+    "p99": 139.4,
+    "max": 206.6
+  },
+  "db_transactions_per_s": 619,
+  "bystander_read_ms": {
+    "p50": 4.4,
+    "p99": 65.9
+  }
+}

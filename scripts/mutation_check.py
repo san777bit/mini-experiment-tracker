@@ -77,15 +77,15 @@ MUTATIONS = [
     Mutation(
         "M4 rotation issues a new key but does not revoke the old one",
         "red: old key keeps working",
-        [('await conn.execute("UPDATE api_keys SET revoked_at = now() WHERE id = $1", auth.key_id)',
-          'pass  # MUTATION')],
+        [('"UPDATE api_keys SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL RETURNING id"',
+          '"SELECT id FROM api_keys WHERE id = $1"  -- MUTATION: no revoke')],
         ["tests/test_silent_failures.py::test_old_key_stops_working_after_rotation"],
     ),
     Mutation(
         "M5 no NOTIFY and no local wake-up at all",
         "green: slower, but NOTIFY is only a hint and the 2 s poll still delivers everything",
         [("        HUB.wake(rid)\n", "        pass  # MUTATION\n"),
-         ("""await db.pool().execute("SELECT pg_notify('run_events', $1)", f"{rid}:{last_seq}")""",
+         ("""await db.execute("SELECT pg_notify('run_events', $1)", f"{rid}:{last_seq}")""",
           "pass  # MUTATION")],
         ["tests/test_silent_failures.py::test_events_lost_on_reconnect_with_concurrent_writers",
          "tests/test_silent_failures.py::test_lost_notify_does_not_lose_events"],

@@ -46,6 +46,15 @@ First page load = stream from `seq 0`, so there is one code path for snapshot an
 - No response cache; API sets `Cache-Control: no-store`. Logs never contain keys or request bodies.
 - Rotation `POST /api/keys/rotate` issues a new key and revokes the calling key immediately (no grace period).
 
+## Changed in round 2 (after attacks, see STRESS.md)
+- Streams share one in-memory tail (last 5000 rows) per run per process; a viewer behind it reads the DB.
+- Writers of one run queue in memory before taking a DB connection; a project gets at most 12 of 20 connections per
+  process; queue > 64 → 429, wait > 5 s → 503.
+- Writes re-check the key inside the transaction (`FOR SHARE`); rotation revokes first and only if still active.
+- Every DB call is bounded (3 s command timeout, bounded acquire/release); DB trouble → 503 + Retry-After.
+- Bodies over 2 MB → 413 before parsing; metric keys normalized to NFC; cursors limited to bigint.
+- Rejected conflicting values are stored once each in `metric_conflicts`; `runs.conflicts` counts distinct values.
+
 ## Known weak spots (to attack in tests)
 Per-run lock throughput; single API process holds the stream hub; full replay on first load grows with run size;
 first-write-wins hides a client bug unless someone reads `conflicts`; key in browser memory.

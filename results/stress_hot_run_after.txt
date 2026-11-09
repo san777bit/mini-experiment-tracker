@@ -1,0 +1,36 @@
+﻿{
+  "config": {
+    "writers": 200,
+    "seconds": 15.0,
+    "baseline": 5
+  },
+  "noisy_project_events_per_s": 114.8,
+  "noisy_errors": {
+    "429": 26155,
+    "503": 75
+  },
+  "victim_baseline_ms": {
+    "read": {
+      "p50": 7.5,
+      "p99": 9.2
+    },
+    "write": {
+      "p50": 15.0,
+      "p99": 19.4
+    }
+  },
+  "victim_under_attack_ms": {
+    "read": {
+      "p50": 17.6,
+      "p99": 185.0,
+      "max": 185.0
+    },
+    "write": {
+      "p50": 33.3,
+      "p99": 347.0,
+      "max": 347.0
+    }
+  },
+  "victim_errors": [],
+  "verdict": "DEGRADED"
+}

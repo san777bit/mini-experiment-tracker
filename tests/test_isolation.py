@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import statistics
 import subprocess
 import time
@@ -34,6 +35,7 @@ def endpoints(run_id: str) -> list[tuple[str, str, dict | None]]:
         ("GET", f"/api/runs/{run_id}/metrics?after=0&limit=5000", None),
         ("POST", f"/api/runs/{run_id}/metrics", batch([{"key": "b_secret", "step": 0, "value": -1.0},
                                                        {"key": "injected", "step": 0, "value": 1.0}])),
+        ("GET", f"/api/runs/{run_id}/conflicts", None),
         ("GET", f"/api/runs/{run_id}/stream", None),
     ]
 
@@ -157,9 +159,19 @@ async def test_timing_foreign_vs_missing(ab):
             return (time.perf_counter() - t0) * 1000
 
         foreign, missing = [], []
-        for _ in range(n):   # interleaved so drift hits both equally
-            foreign.append(await t(f"/api/runs/{run_b}"))
-            missing.append(await t(f"/api/runs/{uuid.uuid4()}"))
+        for _ in range(30):   # warm-up
+            await t(f"/api/runs/{run_b}")
+            await t(f"/api/runs/{uuid.uuid4()}")
+        for _ in range(n):
+            # Random order inside each pair. The first version always measured "foreign" first and
+            # reported +0.09/+0.29 ms; with random order the gap disappears (load/timing_probe.py,
+            # n=3000, 95% CI of the median difference includes 0: results/timing_before.txt).
+            if random.random() < 0.5:
+                foreign.append(await t(f"/api/runs/{run_b}"))
+                missing.append(await t(f"/api/runs/{uuid.uuid4()}"))
+            else:
+                missing.append(await t(f"/api/runs/{uuid.uuid4()}"))
+                foreign.append(await t(f"/api/runs/{run_b}"))
     mf, mm = statistics.median(foreign), statistics.median(missing)
     print(f"[timing] n={n} median foreign={mf:.3f}ms missing={mm:.3f}ms diff={mf - mm:+.3f}ms "
           f"p90 foreign={statistics.quantiles(foreign, n=10)[-1]:.3f} missing={statistics.quantiles(missing, n=10)[-1]:.3f}")

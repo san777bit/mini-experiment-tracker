@@ -38,6 +38,20 @@ With aiohttp: ~320-410 events/s, API at 92% CPU of one core. With 4 workers: 282
 pg_stat_activity showed 19 sessions in `Lock/object` and one in `IO/WALSync`: NOTIFY inside the transaction serialized
 commits. After moving NOTIFY after commit: 499.5 events/s (results/load_50x10_4workers_notify_after_commit.txt).
 
+## Round 2 (details and before/after numbers in STRESS.md)
+- `stress_edges_before.txt`: 7 red. Real bugs: write with a key revoked while it waited (200, stored); 10 parallel
+  rotations → 5 live keys; 200 MB body parsed before rejection; cursor > bigint → 500; NFC/NFD split one metric in two.
+  One red was the test client again (httpx refuses the header value `" 5"`).
+- First chunked-body fix returned 400, not 413: FastAPI turns any exception raised while reading the body into 400.
+- `stress_hot_run_before.txt`: quiet project's read took 7.4 s while another project hammered one run.
+- `stress_fanout_before.txt`: ~4900 DB txn/s for ~6 events/s with 1000 viewers; e2e p99 1.8 s.
+- `stress_partition_before.txt`: first attempt skipped (toxiproxy had not reloaded its config) and exposed a real bug:
+  the API exits for good if the DB is unreachable at boot. Second attempt: 60/60 requests hung. After `command_timeout`
+  alone: still 52/60 hung (asyncpg releases without timeout; reset hangs on the dead socket).
+- `full_suite` after the listener heartbeat: `test_lost_notify_does_not_lose_events` red because it located the
+  listener by its last query (`LISTEN`), now `SELECT 1`. Test fixed via `application_name`.
+- Load regression from my per-project slots (470 ev/s, e2e p50 143 ms) → retuned (499.5 ev/s).
+
 ## 6. Mutation check: script bug
 First run reported `SURPRISE green M5`: the expected string was "green but slower", compared to "green".
 Expectation wording fixed; rerun in results/mutations.txt.

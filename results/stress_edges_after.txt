@@ -1,0 +1,20 @@
+﻿[race] late write with revoked key -> 401, stored={}
+.[rot2] 10 concurrent rotations: 1 succeeded, active keys now=1
+.[body] 200 MB -> 413 in 0.5s; api mem before=179.6MiB / 7.758GiB samples=['179.9MiB / 7.758GiB']
+.[cursor] header='99999999999999999999999' query=None stream=422 history=422
+.[cursor] header='-1' query=None stream=422 history=422
+.[cursor] header='1e3' query=None stream=422 history=422
+.[cursor] header='1_000' query=None stream=422 history=200
+.[cursor] header='+5' query=None stream=422 history=200
+.[cursor] header=None query='99999999999999999999999' stream=422 history=422
+.[ts] '2026-01-01T00:00:00' -> 200 {"accepted":1,"duplicates":0,"conflicts":0,"last_seq":1}
+.[ts] '2026-01-01T00:00:00+14:00' -> 200 {"accepted":1,"duplicates":0,"conflicts":0,"last_seq":1}
+.[ts] '0001-01-01T00:00:00Z' -> 200 {"accepted":1,"duplicates":0,"conflicts":0,"last_seq":1}
+.[ts] '9999-12-31T23:59:59Z' -> 200 {"accepted":1,"duplicates":0,"conflicts":0,"last_seq":1}
+.[ts] '2026-02-30T00:00:00Z' -> 422 {"error":"invalid","details":[{"loc":["body","events",0,"ts"],"msg":"Input should be a valid datetime or date, day value
+.[ts] '1e10' -> 422 {"error":"invalid","details":[{"loc":["body","events",0,"ts"],"msg":"Input should be a valid datetime or date, input is 
+.[floats] 1e400 -> 422; sse=[-0.0, 5e-324, 1.7976931348623157e+308, -1.7976931348623157e+308, 0.30000000000000004, 1e-300]
+.[unicode] stored keys=[b'pr\\xe9cision']
+.[xss] window.__xss=None injected_imgs=0 page_errors=[]
+.
+18 passed in 28.67s

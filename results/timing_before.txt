@@ -1,0 +1,8 @@
+﻿endpoint=/api/runs/{id} n=3000 per class
+median   foreign=2.4661 ms  missing=2.4843 ms  diff=-0.0181 ms  95% CI [-0.0671, +0.0275]
+trimmed  foreign=2.6349 ms  missing=2.6533 ms  diff=-0.0184 ms
+verdict: not distinguishable at this n
+endpoint=/api/runs/{id}/metrics n=3000 per class
+median   foreign=2.7922 ms  missing=2.8260 ms  diff=-0.0337 ms  95% CI [-0.1039, +0.0503]
+trimmed  foreign=2.9661 ms  missing=2.9685 ms  diff=-0.0024 ms
+verdict: not distinguishable at this n

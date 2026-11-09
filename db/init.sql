@@ -42,8 +42,22 @@ CREATE TABLE metrics (
     UNIQUE (run_id, metric_key, step)
 );
 
+-- Values rejected by first-write-wins, kept for audit. One row per distinct rejected value,
+-- so client retries do not inflate runs.conflicts.
+CREATE TABLE metric_conflicts (
+    run_id      uuid NOT NULL REFERENCES runs(id),
+    project_id  uuid NOT NULL,
+    metric_key  text NOT NULL,
+    step        bigint NOT NULL,
+    value       double precision NOT NULL,
+    batch_id    uuid NOT NULL,              -- first batch that carried it
+    seen_at     timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (run_id, metric_key, step, value)
+);
+
 ALTER TABLE runs    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE metrics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE metric_conflicts ENABLE ROW LEVEL SECURITY;
 
 -- NULLIF: after a SET LOCAL transaction ends the GUC becomes '' (not NULL) on the same connection.
 CREATE POLICY runs_isolation ON runs
@@ -56,4 +70,9 @@ CREATE POLICY metrics_isolation ON metrics
 GRANT SELECT, INSERT ON projects TO app;
 GRANT SELECT, INSERT, UPDATE ON api_keys TO app;
 GRANT SELECT, INSERT, UPDATE ON runs TO app;
+CREATE POLICY conflicts_isolation ON metric_conflicts
+    USING (project_id = NULLIF(current_setting('app.project_id', true), '')::uuid)
+    WITH CHECK (project_id = NULLIF(current_setting('app.project_id', true), '')::uuid);
+
 GRANT SELECT, INSERT ON metrics TO app;
+GRANT SELECT, INSERT ON metric_conflicts TO app;

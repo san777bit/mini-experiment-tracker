@@ -47,7 +47,7 @@ async def require_project(request: Request) -> Auth:
         raise UNAUTHORIZED
     # Lookup by hash: the DB never sees the plain key, and an index lookup on a
     # hash does not leak a prefix-match timing signal.
-    row = await db.pool().fetchrow(
+    row = await db.fetchrow(
         "SELECT id, project_id FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL",
         hash_key(token),
     )
@@ -57,9 +57,25 @@ async def require_project(request: Request) -> Auth:
     return Auth(project_id=row["project_id"], key_id=row["id"])
 
 
+async def recheck_key_in_tx(conn: object, key_id: UUID) -> None:
+    """Re-validate the key inside a write transaction and hold a share lock on it until commit.
+
+    Found by test_write_authenticated_before_rotation_cannot_commit_after_it: auth runs at request
+    start, so a write that waited (e.g. on the run lock) committed after its key was revoked.
+    With FOR SHARE, a rotation either commits first (we see revoked_at and abort) or waits for
+    this write to commit (the write really happened before the revocation).
+    """
+    ok = await conn.fetchval(  # type: ignore[attr-defined]
+        "SELECT 1 FROM api_keys WHERE id = $1 AND revoked_at IS NULL FOR SHARE", key_id
+    )
+    if ok is None:
+        STATS.inc("writes_rejected_revoked_in_flight")
+        raise UNAUTHORIZED
+
+
 async def key_is_active(key_id: UUID) -> bool:
     return bool(
-        await db.pool().fetchval(
+        await db.fetchval(
             "SELECT revoked_at IS NULL FROM api_keys WHERE id = $1", key_id
         )
     )

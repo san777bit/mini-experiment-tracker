@@ -1,0 +1,15 @@
+# Chaos mode: the API reaches Postgres through toxiproxy ("pg"), so tests can partition API <-> DB.
+#   docker compose -f docker-compose.yml -f docker-compose.chaos.yml up -d --build
+# Not the default: it adds a hop to every query and would skew the load numbers.
+services:
+  toxiproxy:
+    depends_on: !reset []
+  api:
+    environment:
+      DATABASE_URL: postgresql://app:app@toxiproxy:15432/tracker
+      CHAOS_DB_PROXY: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+      toxiproxy:
+        condition: service_started

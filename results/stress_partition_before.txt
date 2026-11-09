@@ -1,0 +1,49 @@
+﻿[partition] during (15.8s): {'client-timeout': 60}; after heal: first 200 after 0.2s, results=['200', '200', '200']...; stats={'listener_connects': 2}
+F
+================================== FAILURES ===================================
+____________________ test_api_recovers_after_db_partition _____________________
+
+toxi = <helpers.Toxi object at 0x000002027E2C5250>
+
+    async def test_api_recovers_after_db_partition(toxi):
+        p = await new_project("partition")
+        run_id = await new_run(p)
+        async with httpx.AsyncClient(base_url=API) as c:
+            assert await probe(c, p, run_id, 0, 5) == "200"
+    
+            # Partition: drop everything in both directions, keep the TCP connections open.
+            await toxi.add("pg", "blackhole_up", "timeout", "upstream", {"timeout": 0})
+            await toxi.add("pg", "blackhole_down", "timeout", "downstream", {"timeout": 0})
+            t0 = time.monotonic()
+            during = await asyncio.gather(*(probe(c, p, run_id, 1 + i, 15) for i in range(60)))
+            during_s = time.monotonic() - t0
+            await toxi.remove("pg", "blackhole_up")
+            await toxi.remove("pg", "blackhole_down")
+    
+            # Healed. How long until writes and reads work again, and do they work at all?
+            healed = time.monotonic()
+            recovered_after = None
+            after = []
+            for i in range(60):
+                res = await probe(c, p, run_id, 100 + i, 10)
+                after.append(res)
+                if res == "200" and recovered_after is None:
+                    recovered_after = time.monotonic() - healed
+                if res == "200" and after[-3:] == ["200"] * 3:
+                    break
+                await asyncio.sleep(1)
+            stats = (await c.get("/api/admin/stats", headers={"x-admin-token": "dev-admin-token"})).json()
+        counts = {k: during.count(k) for k in set(during)}
+        print(f"[partition] during ({during_s:.1f}s): {counts}; after heal: first 200 after "
+              f"{recovered_after if recovered_after is None else round(recovered_after, 1)}s, results={after[:10]}...; "
+              f"stats={ {k: v for k, v in stats.items() if 'listener' in k or 'timeout' in k or 'db_' in k} }")
+        assert recovered_after is not None and recovered_after < 15, "API did not recover after the partition healed"
+        # During the partition the API must answer (fast 503), not leave clients hanging.
+>       assert "client-timeout" not in counts, "requests hung during the partition"
+E       AssertionError: requests hung during the partition
+E       assert 'client-timeout' not in {'client-timeout': 60}
+
+tests\test_stress_partition.py:74: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_stress_partition.py::test_api_recovers_after_db_partition
+1 failed in 21.66s

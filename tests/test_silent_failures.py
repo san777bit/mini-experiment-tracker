@@ -87,6 +87,25 @@ async def test_duplicate_batch_sent_concurrently():
     assert run["n"] == run["last_seq"] == 100
 
 
+async def test_conflict_counter_counts_distinct_values_not_retries():
+    """First version: runs.conflicts += conflicting events per request, so a retried conflicting
+    batch counted twice (e2e run showed page conflicts=10 for 8 distinct). Now: distinct values."""
+    p = await new_project("conflicts")
+    run_id = await new_run(p)
+    async with httpx.AsyncClient(base_url=API, timeout=10) as c:
+        await c.post(f"/api/runs/{run_id}/metrics", headers=p.h, json=batch([{"key": "k", "step": 1, "value": 1.0}]))
+        bad = batch([{"key": "k", "step": 1, "value": 2.0}, {"key": "k", "step": 1, "value": 2.0}])
+        for _ in range(5):                                    # same conflicting batch retried
+            r = await c.post(f"/api/runs/{run_id}/metrics", headers=p.h, json=bad)
+            assert r.json()["conflicts"] == 2                 # the client is told about every rejected event
+        await c.post(f"/api/runs/{run_id}/metrics", headers=p.h, json=batch([{"key": "k", "step": 1, "value": 3.0}]))
+        audit = (await c.get(f"/api/runs/{run_id}/conflicts", headers=p.h)).json()["conflicts"]
+    run = await db_run(run_id)
+    print(f"[conflicts] runs.conflicts={run['conflicts']} audit={audit}")
+    assert run["conflicts"] == 2
+    assert sorted(a["rejected"] for a in audit) == [2.0, 3.0] and all(a["stored"] == 1.0 for a in audit)
+
+
 async def test_slow_reader_gets_everything():
     """Silent version: a bounded per-client queue drops events for a client that reads slowly.
     Our server has no per-client queue (it reads from the DB at the client's pace).
@@ -200,7 +219,7 @@ async def test_lost_notify_does_not_lose_events():
             await asyncio.sleep(0.5)
             killed = await owner.fetchval(
                 "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity "
-                "WHERE usename = 'app' AND query ILIKE 'LISTEN%'")
+                "WHERE usename = 'app' AND application_name = 'tracker-listener'")
             t0 = time.monotonic()
             for s in range(50):
                 await c.post(f"/api/runs/{run_id}/metrics", headers=p.h, json=batch([{"key": "k", "step": s, "value": 1.0}]))
@@ -210,7 +229,7 @@ async def test_lost_notify_does_not_lose_events():
     finally:
         await owner.close()
     print(f"[listener] killed={killed} delivered={len(events)} in {elapsed:.1f}s "
-          f"listener_connects={stats.get('listener_connects')} polls={stats.get('stream_polls')}")
+          f"listener_connects={stats.get('listener_connects')} tail_polls={stats.get('tail_polls')}")
     assert killed >= 1
     assert_contiguous(events, 1, 50)
 

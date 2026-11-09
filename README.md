@@ -25,6 +25,7 @@ curl -X POST localhost:8000/api/admin/projects -H "x-admin-token: dev-admin-toke
 | GET | /api/runs/{id} | 404 for foreign and missing alike |
 | POST | /api/runs/{id}/metrics | `{"batch_id": uuid, "events": [{"key","step","value","ts?"}]}`, ≤1000, idempotent |
 | GET | /api/runs/{id}/metrics?after=&limit= | history by seq |
+| GET | /api/runs/{id}/conflicts | values rejected by first-write-wins, with the stored value |
 | GET | /api/runs/{id}/stream | SSE, `id: seq`, resume with `Last-Event-ID` |
 
 ## Tests (stack must be running)
@@ -33,6 +34,9 @@ python -m venv .venv && .venv/Scripts/pip install -r tests/requirements.txt && .
 .venv/Scripts/python -m pytest -s -v
 .venv/Scripts/python scripts/mutation_check.py      # rebuilds the api container several times
 ```
+Round-2 stress tests (partition test needs chaos mode, where the API reaches Postgres through toxiproxy):
+see [STRESS.md](STRESS.md#how-to-run).
+
 Load test, run inside the compose network (PowerShell wrapper; the docstring has the plain docker command):
 ```bash
 ./load/run_in_network.ps1 loadtest.py --runs 50 --rate 10 --duration 60

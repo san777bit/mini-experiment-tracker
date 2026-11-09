@@ -18,5 +18,11 @@ in `results/`, not from the assistant's description.
   a broken expected string in the mutation script. Each was a red run that I/it investigated before changing anything.
 - **Missed validation**: NUL bytes in metric keys (500, poison batch). Caught by its own test, then fixed.
 
+- **Round 2 predictions.** Before each attack the assistant wrote down its expectation (STRESS.md). 3 of 14 were
+  wrong: it expected a Postgres restart to cause errors, a 100k-point page to lag, and the API to stay dead after a
+  partition healed. The measurements decided, not the predictions.
+- **Self-inflicted regression.** Its per-project DB limit cut a single big project's throughput by 6% until the load
+  test caught it and the limit was retuned.
+
 ## What I verified or redid myself
 - TODO (fill in before sending): which files I read line by line, what I reran by hand, what I changed.

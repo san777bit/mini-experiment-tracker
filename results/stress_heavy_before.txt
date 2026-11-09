@@ -1,0 +1,4 @@
+﻿[dbrestart] restart took 1.0s; first acked write 0.1s after DB back; failed attempts=0; page synced 0.0s after last write; reconnects=0 gaps=0
+.[long] 100000 points loaded via API in 9.8s; page synced in 5.3s; JS heap=61 MiB; live lag samples (events behind)=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; final live sync 5.6s; long tasks={'n': 87, 'worst': 96}
+.
+2 passed in 139.96s (0:02:19)
