@@ -34,11 +34,15 @@ curl -X POST localhost:8000/api/admin/projects -H "x-admin-token: dev-admin-toke
 | GET | /api/admin/missing-points?quiet_seconds=60 | admin; runs whose producer reported more points (`client_points` in batches) than are stored |
 
 ## Tests (stack must be running)
+Linux / macOS:
 ```bash
-python -m venv .venv && .venv/Scripts/pip install -r tests/requirements.txt && .venv/Scripts/python -m playwright install chromium
-.venv/Scripts/python -m pytest -s -v
-.venv/Scripts/python scripts/mutation_check.py      # rebuilds the api container several times
+python3 -m venv .venv && .venv/bin/pip install -r tests/requirements.txt && .venv/bin/python -m playwright install chromium
+.venv/bin/python -m pytest -s -v
+.venv/bin/python scripts/mutation_check.py      # rebuilds the api container several times
 ```
+Windows: the same with `.venv/Scripts/` instead of `.venv/bin/`. The chaos e2e test prints its random seed;
+`SEED=<n>` replays the same batch plan (network faults are still random).
+Raw outputs and what each file shows: [results/README.md](results/README.md).
 Round-2 stress tests (partition test needs chaos mode, where the API reaches Postgres through toxiproxy) and round-3
 noisy-neighbour attacks (`load/r3_series.ps1`): see [STRESS.md](STRESS.md#how-to-run).
 Per-process limits are env vars: `PROJECT_RPS`, `PROJECT_BURST`, `PROJECT_BYTES_PS`, `PROJECT_BYTES_BURST`,

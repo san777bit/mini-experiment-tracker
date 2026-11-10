@@ -120,3 +120,30 @@ async def test_long_run_page_open_and_stay_live():
           f"final live sync {live_sync:.1f}s; long tasks={long_tasks}")
     assert sync_s < 30, "opening a long run takes too long"
     assert max(lags) <= 20, "page falls behind live updates on a long run"
+
+
+async def test_one_metric_150k_steps_renders():
+    """One metric with 150k steps (a long run logging a single loss).
+    Expectation before running: Math.min(...vals) passes every value as a call argument; V8 throws
+    RangeError past ~125k arguments, so the chart render throws and the page stops redrawing."""
+    p = await new_project("onekey")
+    run_id = await new_run(p)
+    steps = 150_000
+    async with httpx.AsyncClient(base_url=API, timeout=60) as c:
+        for i in range(0, steps, 1000):
+            evs = [{"key": "loss", "step": s, "value": (s % 89) / 89} for s in range(i, i + 1000)]
+            r = await c.post(f"/api/runs/{run_id}/metrics", headers=p.h, json=batch(evs))
+            assert r.status_code == 200, r.text
+    async with async_playwright() as pw:
+        browser, page = await open_page(pw, p.key, run_id)
+        errors: list[str] = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        sync_s = await wait_applied(page, steps, 180)
+        await page.wait_for_timeout(1000)            # let the last rAF render run
+        feet = page.locator(".chart-foot")
+        foot = await feet.first.inner_text() if await feet.count() else None
+        await browser.close()
+    print(f"[onekey] {steps} points of one metric; page synced in {sync_s:.1f}s; chart foot={foot!r}; "
+          f"page errors={errors[:3]}")
+    assert not errors, errors[:3]
+    assert foot and f"{steps - 1}" in foot, "chart did not render the last step"

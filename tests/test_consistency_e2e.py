@@ -5,7 +5,9 @@ lossy link (toxiproxy "ingest": latency + responses cut AFTER the server committ
 The browser watches the run through toxiproxy "api", whose connections we cut mid-stream.
 
 What this test does NOT catch (see NOTE.md):
- - more than one API process (the stream hub is per process; we run one);
+ - more than one API host: compose runs 4 worker processes on one host, so cross-process delivery goes
+   through Postgres NOTIFY, but which worker serves the stream and which takes each write is not
+   controlled here (test_round4 pins cross-process push and revocation directly);
  - an API or DB crash inside a transaction (covered separately in test_silent_failures);
  - chart pixels (we check the data the chart is drawn from and the table, not the SVG);
  - timing windows narrower than what this run happened to hit; a pass is evidence, not proof;
@@ -17,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
 import random
 import time
 import uuid
@@ -115,7 +118,9 @@ async def produce(run_id, project, batches, stats, workers=4):
 
 
 async def test_page_matches_db_under_chaos(toxi):
-    rng = random.Random(int(time.time()))
+    seed = int(os.environ.get("SEED") or time.time())
+    print(f"[e2e] seed={seed} (rerun the same plan with SEED={seed})")
+    rng = random.Random(seed)
     p = await new_project("e2e")
     run_id = await new_run(p, "chaos")
     batches, truth = plan_batches(steps=250, rng=rng)

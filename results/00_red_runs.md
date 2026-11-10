@@ -98,3 +98,23 @@ commits. After moving NOTIFY after commit: 499.5 events/s (results/load_50x10_4w
 ## 6. Mutation check: script bug
 First run reported `SURPRISE green M5`: the expected string was "green but slower", compared to "green".
 Expectation wording fixed; rerun in results/mutations.txt.
+
+## 7. One metric with 150k steps: real bug (found in external review)
+```
+[onekey] 150000 points of one metric; page synced in 23.3s; chart foot=None; page errors=['Maximum call stack size exceeded', ...]
+FAILED tests/test_stress_heavy.py::test_one_metric_150k_steps_renders
+```
+`Math.min(...vals)` in the chart overflowed the call stack; the data synced but nothing was drawn. The 100k test
+spread its points over 20 metrics (5000 each), so it never hit the limit. Fixed with a loop; green in
+`onekey_150k_after.txt`.
+## 8. test_timing_foreign_vs_missing: flaky on a noisy host (full suite after the 150k fix)
+```
+[timing] n=300 median foreign=29.403ms missing=30.924ms diff=-1.521ms p90 foreign=57.006 missing=54.219
+FAILED tests/test_isolation.py::test_timing_foreign_vs_missing - assert 1.521...
+1 failed, 62 passed, 1 skipped in 664.28s
+```
+Only static JS had changed. Medians were ~30 ms per request vs 14 ms in `round5_test_isolation.txt`, so the host
+was slow. Reran alone 3 times: diff -0.504 (fail), +0.251, +0.001 ms. The in-network probe, which is the real
+check (n=3000, bootstrap CI): `diff=+0.0560 ms 95% CI [-0.0375, +0.1483] verdict: not distinguishable`.
+The 0.5 ms threshold over 300 samples from the Windows host is too tight for a noisy machine; I left it as is
+rather than loosen it after a failure. `full_suite.txt` is this red run.

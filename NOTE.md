@@ -15,7 +15,7 @@ the committing process (directly or in the NOTIFY payload) or by a DB read; a ta
 values, 15% of responses cut *after* commit, browser stream disabled/reset/throttled → `db=750 page=750 missing=0
 extra=0 wrong_value=0` (102 of them committed in requests whose response was lost); the rendered table equals SQL.
 Also: offline 30+ s then caught up in 1.9 s; property test; 16 writers on
-one run with a reconnecting reader; Postgres restart under load; a 100k-point run. **Not caught:** chart pixels (I
+one run with a reconnecting reader; Postgres restart under load; a 100k-point run; one metric with 150k steps (it broke the chart until the last fix). **Not caught:** chart pixels (I
 check the data the SVG is drawn from), races narrower than the runs hit (the mutation check is my answer), multi-host
 API, DB failover, non-Chromium browsers, client clock skew (a naive `ts` is silently taken as UTC).
 

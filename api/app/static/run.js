@@ -195,7 +195,9 @@ function chart(k, steps, m) {
   svg.setAttribute('viewBox', '0 0 100 100');
   svg.setAttribute('preserveAspectRatio', 'none');
   const vals = steps.map(s => m.get(s));
-  const lo = Math.min(...vals), hi = Math.max(...vals);
+  // a loop, not Math.min(...vals): spreading 125k+ arguments overflows the call stack
+  let lo = Infinity, hi = -Infinity;
+  for (const v of vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
   const x0 = steps[0], x1 = steps[steps.length - 1];
   const pts = steps.map((s, i) => {
     const x = x1 === x0 ? 50 : ((s - x0) / (x1 - x0)) * 100;

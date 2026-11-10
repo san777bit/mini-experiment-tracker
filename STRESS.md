@@ -81,6 +81,12 @@ The page now takes 9.3-11.8 s to sync (round 2: 5.3 s). Round-2 code on the same
 is the machine, not the code. Server-side catch-up alone (no browser): 0.72-0.78 s for 100 000 events (round-2 code
 0.91 s). One earlier reading of 3.9 s right after a WSL restart did not reproduce.
 
+## Round 5 addendum: one metric with 150k steps
+Expectation before running: `Math.min(...vals)` passes every value as a call argument and overflows past ~125k.
+It did: `Maximum call stack size exceeded` on every render, no chart drawn, while the data itself synced
+(`results/onekey_150k_before.txt`). Fixed with a plain loop; the page now syncs 150 000 points in 14.7 s with no
+page errors and the chart shows step 0 to 149 999 (`results/onekey_150k_after.txt`).
+
 ## How to run
 ```bash
 python -m pytest tests/test_stress_edges.py tests/test_stress_heavy.py -s

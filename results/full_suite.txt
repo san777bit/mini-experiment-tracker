@@ -1,4 +1,47 @@
-..............................................................s          [100%]
+﻿..........F....................................................s         [100%]
+================================== FAILURES ===================================
+_______________________ test_timing_foreign_vs_missing ________________________
+
+ab = (Project(id='466e6aed-5d73-410b-9294-c7e5750a6bd3', key='sk_3TrZBM_kpyZv5njfblbP8rOFDTRSv31cYBxLSGl2HSY'), Project(id=...Gjh3GZVG9iQMakMyWI4FHYaUNmfHmS3oNnWU'), 'bff71526-982d-48c2-b7f7-02f1fe59a6bb', 'a112bc40-7819-44ad-945e-28cbd4f8b692')
+
+    async def test_timing_foreign_vs_missing(ab):
+        """Measure, don't assume. Reported numbers go to results/."""
+        a, _b, _run_a, run_b = ab
+        n = 300
+        async with httpx.AsyncClient(base_url=API, timeout=10) as c:
+            async def t(path: str) -> float:
+                t0 = time.perf_counter()
+                r = await c.get(path, headers=a.h)
+                assert r.status_code == 404
+                return (time.perf_counter() - t0) * 1000
+    
+            foreign, missing = [], []
+            for _ in range(30):   # warm-up
+                await t(f"/api/runs/{run_b}")
+                await t(f"/api/runs/{uuid.uuid4()}")
+            for _ in range(n):
+                # Random order inside each pair. The first version always measured "foreign" first and
+                # reported +0.09/+0.29 ms; with random order the gap disappears (load/timing_probe.py,
+                # n=3000, 95% CI of the median difference includes 0: results/timing_before.txt).
+                if random.random() < 0.5:
+                    foreign.append(await t(f"/api/runs/{run_b}"))
+                    missing.append(await t(f"/api/runs/{uuid.uuid4()}"))
+                else:
+                    missing.append(await t(f"/api/runs/{uuid.uuid4()}"))
+                    foreign.append(await t(f"/api/runs/{run_b}"))
+        mf, mm = statistics.median(foreign), statistics.median(missing)
+        print(f"[timing] n={n} median foreign={mf:.3f}ms missing={mm:.3f}ms diff={mf - mm:+.3f}ms "
+              f"p90 foreign={statistics.quantiles(foreign, n=10)[-1]:.3f} missing={statistics.quantiles(missing, n=10)[-1]:.3f}")
+        # Same SQL for both (WHERE id = $1 AND project_id = $2): expect no systematic gap.
+        # Threshold is loose on purpose; a real attacker averages over many more samples (see NOTE.md).
+>       assert abs(mf - mm) < 0.5
+E       assert 1.521300117019564 < 0.5
+E        +  where 1.521300117019564 = abs((29.40304996445775 - 30.924350081477314))
+
+tests\test_isolation.py:180: AssertionError
+---------------------------- Captured stdout call -----------------------------
+[timing] n=300 median foreign=29.403ms missing=30.924ms diff=-1.521ms p90 foreign=57.006 missing=54.219
 =========================== short test summary info ===========================
 SKIPPED [1] tests\test_stress_partition.py:40: API is not routed through toxiproxy (chaos mode)
-62 passed, 1 skipped in 406.86s (0:06:46)
+FAILED tests/test_isolation.py::test_timing_foreign_vs_missing - assert 1.521...
+1 failed, 62 passed, 1 skipped in 664.28s (0:11:04)
