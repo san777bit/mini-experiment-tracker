@@ -1,7 +1,8 @@
 """Do the tests catch the bugs they claim to catch?
 
-For each mutation: patch the API source, rebuild, run the targeted tests, restore.
-A mutation whose anchor text is missing aborts the script (no silent no-op mutations).
+For each mutation: patch the API source (and/or the ingest_batch SQL function), rebuild, run the
+targeted tests, restore. A mutation whose anchor text is missing aborts the script (no silent
+no-op mutations).
 
     .venv/Scripts/python scripts/mutation_check.py > results/mutations.txt
 """
@@ -13,7 +14,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MAIN = ROOT / "api" / "app" / "main.py"
+APP = ROOT / "api" / "app"
+MAIN = APP / "main.py"
+INIT_SQL = ROOT / "db" / "init.sql"
 PY = str(ROOT / ".venv" / "Scripts" / "python.exe") if sys.platform == "win32" else sys.executable
 
 
@@ -21,34 +24,35 @@ PY = str(ROOT / ".venv" / "Scripts" / "python.exe") if sys.platform == "win32" e
 class Mutation:
     name: str
     expect: str                        # "red" or "green" (and why)
-    edits: list[tuple[str, str]]       # (original, replacement) in main.py
+    edits: list[tuple]                 # (original, replacement) in main.py, or (file, original, replacement)
     tests: list[str]
     sql_before: list[str] = field(default_factory=list)
     sql_after: list[str] = field(default_factory=list)
+    fn_edits: list[tuple[str, str]] = field(default_factory=list)   # applied to ingest_batch
 
 
-LOCK_BLOCK = '''        last_seq = await conn.fetchval(
-            "SELECT last_seq FROM runs WHERE id = $1 AND project_id = $2 FOR UPDATE",
-            rid, auth.project_id,
-        )
-        if last_seq is None:
-            raise NOT_FOUND'''
+def ingest_fn() -> str:
+    """The ingest_batch definition from init.sql, as a CREATE OR REPLACE statement."""
+    sql = INIT_SQL.read_text(encoding="utf-8")
+    start = sql.index("CREATE FUNCTION ingest_batch(")
+    end = sql.index("$$;", start) + 3
+    return "CREATE OR REPLACE" + sql[start:end][len("CREATE"):]
 
-M1_BLOCK = '''        if await conn.fetchval("SELECT 1 FROM runs WHERE id = $1 AND project_id = $2", rid, auth.project_id) is None:
-            raise NOT_FOUND
-        # MUTATION: seq range reserved in a separate, already committed statement (BIGSERIAL-like)
-        async with db.project_tx(auth.project_id) as c2:
-            last_seq = await c2.fetchval(
-                "UPDATE runs SET last_seq = last_seq + $2 WHERE id = $1 RETURNING last_seq - $2",
-                rid, len(body.events))'''
 
 MUTATIONS = [
     Mutation(
-        "M1 seq allocated outside the ingest transaction (no per-run serialization)",
+        "M1 seq from a global sequence, no run row lock (BIGSERIAL-style)",
         "red: reader sees holes / out-of-order commits",
-        [(LOCK_BLOCK, M1_BLOCK),
-         ("UPDATE runs SET last_seq = $2, conflicts", "UPDATE runs SET last_seq = greatest(last_seq, $2), conflicts")],
+        [],
         ["tests/test_silent_failures.py::test_events_lost_on_reconnect_with_concurrent_writers"],
+        sql_before=["CREATE SEQUENCE IF NOT EXISTS m1_seq", "GRANT USAGE ON SEQUENCE m1_seq TO app"],
+        fn_edits=[
+            ("AND r.project_id = p_project FOR UPDATE;", "AND r.project_id = p_project;"),
+            ("v_last + row_number() OVER (ORDER BY ord)", "nextval('m1_seq')"),
+            ("o_last_seq := v_last + o_accepted;",
+             "o_last_seq := (SELECT max(seq) FROM metrics WHERE run_id = p_run);"),
+            ("SET last_seq = o_last_seq,", "SET last_seq = greatest(runs.last_seq, o_last_seq),"),
+        ],
     ),
     Mutation(
         "M2 stream resumes from Last-Event-ID + 1 (off by one)",
@@ -82,13 +86,41 @@ MUTATIONS = [
         ["tests/test_silent_failures.py::test_old_key_stops_working_after_rotation"],
     ),
     Mutation(
-        "M5 no NOTIFY and no local wake-up at all",
-        "green: slower, but NOTIFY is only a hint and the 2 s poll still delivers everything",
-        [("        HUB.wake(rid)\n", "        pass  # MUTATION\n"),
-         ("""await db.execute("SELECT pg_notify('run_events', $1)", f"{rid}:{last_seq}")""",
-          "pass  # MUTATION")],
+        "M5 no push, no NOTIFY, no local wake-up at all",
+        "green: slower, but pushes/NOTIFY are only hints and the 2 s poll still delivers everything",
+        [("        HUB.publish(rid, rows, last_seq)", "        pass  # MUTATION")],
         ["tests/test_silent_failures.py::test_events_lost_on_reconnect_with_concurrent_writers",
          "tests/test_silent_failures.py::test_lost_notify_does_not_lose_events"],
+    ),
+    # --- round 2/3 fixes --------------------------------------------------------------------
+    Mutation(
+        "M6 key re-check removed from ingest_batch",
+        "red: a write authenticated before rotation commits after it",
+        [],
+        ["tests/test_stress_edges.py::test_write_authenticated_before_rotation_cannot_commit_after_it"],
+        fn_edits=[("IF NOT FOUND THEN o_status := 'revoked'; RETURN; END IF;", "-- MUTATION: no re-check")],
+    ),
+    Mutation(
+        "M7 rejected-key cache disabled",
+        "red: every request with a revoked key is a DB lookup again",
+        [(APP / "auth.py", "        if digest in self.bad:\n", "        if False:  # MUTATION\n")],
+        ["tests/test_round3.py::test_requests_with_a_rejected_key_do_not_touch_the_db"],
+    ),
+    Mutation(
+        "M8 fair gate degraded to FIFO",
+        "red: a quiet tenant waits behind a hot tenant's whole queue",
+        [(APP / "limits.py", "key=lambda t: (self.held.get(t, 0), self.waiting[t][0][0])",
+          "key=lambda t: self.waiting[t][0][0]")],
+        ["tests/test_round3.py::test_gate_serves_a_quiet_tenant_before_a_hot_tenants_queue"],
+    ),
+    # --- round 4 ---------------------------------------------------------------------------
+    Mutation(
+        "M9 pushed rows appended without the contiguity check",
+        "red: out-of-order NOTIFYs from two processes put a hole/disorder in the live tail",
+        [(APP / "hub.py", "            if r.seq != self.last_seq + 1:\n                return False\n",
+          "            pass  # MUTATION\n")],
+        ["tests/test_silent_failures.py::test_events_lost_on_reconnect_with_concurrent_writers",
+         "tests/test_round4.py::test_push_with_a_hole_is_refused_and_falls_back_to_the_db"],
     ),
 ]
 
@@ -104,26 +136,40 @@ def rebuild() -> None:
 
 
 def psql(stmt: str) -> None:
-    r = sh("docker", "compose", "exec", "-T", "db", "psql", "-U", "owner", "-d", "tracker", "-c", stmt)
+    r = sh("docker", "compose", "exec", "-T", "db", "psql", "-v", "ON_ERROR_STOP=1",
+           "-U", "owner", "-d", "tracker", "-c", stmt)
     if r.returncode != 0:
         raise SystemExit(f"psql failed: {r.stderr}")
 
 
 def main() -> None:
-    original = MAIN.read_text(encoding="utf-8")
+    files = [MAIN, APP / "auth.py", APP / "limits.py", APP / "hub.py"]
+    originals = {f: f.read_text(encoding="utf-8") for f in files}
+    fn_original = ingest_fn()
     summary = []
     try:
         for m in MUTATIONS:
-            src = original
-            for old, new in m.edits:
-                if old not in src:
+            srcs = dict(originals)
+            for edit in m.edits:
+                path, old, new = edit if len(edit) == 3 else (MAIN, *edit)
+                if old not in srcs[path]:
                     raise SystemExit(f"[{m.name}] anchor not found, mutation would be a no-op:\n{old}")
-                src = src.replace(old, new, 1)
-            MAIN.write_text(src, encoding="utf-8")
+                srcs[path] = srcs[path].replace(old, new, 1)
+            fn = fn_original
+            for old, new in m.fn_edits:
+                if old not in fn:
+                    raise SystemExit(f"[{m.name}] SQL anchor not found, mutation would be a no-op:\n{old}")
+                fn = fn.replace(old, new, 1)
+            for f in files:
+                f.write_text(srcs[f], encoding="utf-8", newline="\n")
             rebuild()
             for s in m.sql_before:
                 psql(s)
+            if m.fn_edits:
+                psql(fn)
             r = sh(PY, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", *m.tests)
+            if m.fn_edits:
+                psql(fn_original)
             for s in m.sql_after:
                 psql(s)
             outcome = "green" if r.returncode == 0 else "red"
@@ -133,7 +179,9 @@ def main() -> None:
                   flush=True)
             summary.append(f"{'OK      ' if ok else 'SURPRISE'} {outcome:5s} {m.name}")
     finally:
-        MAIN.write_text(original, encoding="utf-8")
+        for f, text in originals.items():
+            f.write_text(text, encoding="utf-8", newline="\n")
+        psql(fn_original)
         rebuild()
     print("=== summary")
     print("\n".join(summary))

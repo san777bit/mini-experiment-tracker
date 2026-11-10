@@ -1,7 +1,9 @@
 # Mini experiment tracker
 
 Projects with API keys, metric ingestion over an unreliable network, a run list and a live run page (SSE).
-Read [NOTE.md](NOTE.md) first (results and verdict), then [DESIGN.md](DESIGN.md).
+Read [NOTE.md](NOTE.md) first (results and verdict), then [DESIGN.md](DESIGN.md), [STRESS.md](STRESS.md),
+[PERF.md](PERF.md). Per-phase server timings: `GET /api/admin/timings` (admin token, per worker);
+`./load/perf_step.ps1 <name> [--jitter]` runs the 50×10 load twice with them.
 
 ## Run
 ```bash
@@ -34,8 +36,10 @@ python -m venv .venv && .venv/Scripts/pip install -r tests/requirements.txt && .
 .venv/Scripts/python -m pytest -s -v
 .venv/Scripts/python scripts/mutation_check.py      # rebuilds the api container several times
 ```
-Round-2 stress tests (partition test needs chaos mode, where the API reaches Postgres through toxiproxy):
-see [STRESS.md](STRESS.md#how-to-run).
+Round-2 stress tests (partition test needs chaos mode, where the API reaches Postgres through toxiproxy) and round-3
+noisy-neighbour attacks (`load/r3_series.ps1`): see [STRESS.md](STRESS.md#how-to-run).
+Per-process limits are env vars: `PROJECT_RPS`, `PROJECT_BURST`, `PROJECT_BYTES_PS`, `PROJECT_BYTES_BURST`,
+`REJECT_DELAY`, `RUN_QUEUE_MAX`, `DB_POOL_MAX`.
 
 Load test, run inside the compose network (PowerShell wrapper; the docstring has the plain docker command):
 ```bash

@@ -18,11 +18,14 @@ import argparse
 import asyncio
 import json
 import os
+import random
 import time
 import uuid
 
 import aiohttp
 import asyncpg
+
+import timings
 
 API = os.environ.get("API_URL", "http://localhost:8000")
 DB_OWNER = os.environ.get("DB_OWNER_URL", "postgresql://owner:owner@localhost:55432/tracker")
@@ -52,10 +55,16 @@ async def main(a: argparse.Namespace) -> dict:
         misses = 0
         seen: dict[str, list[int]] = {rid: [] for rid in runs}
         stop = asyncio.Event()
+        ack_at: dict[float, float] = {}     # send time (= value) -> client got the 200
+        recv_at: dict[float, float] = {}    # send time (= value) -> viewer parsed it
 
         async def producer(rid: str) -> None:
             nonlocal misses
             interval = a.batch / a.rate
+            if a.jitter:
+                # Real producers are not phase-aligned. Without this, all runs send in the same
+                # millisecond every interval (worst case, the default).
+                await asyncio.sleep(random.uniform(0, interval))
             t_next = time.monotonic()
             end = t_next + a.duration
             step = 0
@@ -69,6 +78,8 @@ async def main(a: argparse.Namespace) -> dict:
                         await r.read()
                         if r.status != 200:
                             errors[str(r.status)] = errors.get(str(r.status), 0) + 1
+                        elif a.timings:
+                            ack_at[events[-1]["value"]] = time.time()
                 except aiohttp.ClientError as e:
                     errors[type(e).__name__] = errors.get(type(e).__name__, 0) + 1
                 ingest_ms.append((time.perf_counter() - t0) * 1000)
@@ -88,16 +99,33 @@ async def main(a: argparse.Namespace) -> dict:
                         ev = line[7:]
                     elif line.startswith("data: ") and ev == "metric":
                         d = json.loads(line[6:])
-                        e2e_ms.append((time.time() - d["value"]) * 1000)
+                        now = time.time()
+                        e2e_ms.append((now - d["value"]) * 1000)
+                        if a.timings:
+                            recv_at[d["value"]] = now
                         seen[rid].append(d["seq"])
 
         viewers = [asyncio.create_task(viewer(rid)) for _ in range(a.viewers) for rid in runs]
+        client_lag: list[float] = []
+
+        async def lag_probe() -> None:
+            # Is the generator itself late? Its latency numbers include its own loop's queue.
+            while not stop.is_set():
+                t0 = time.perf_counter()
+                await asyncio.sleep(0.05)
+                client_lag.append((time.perf_counter() - t0 - 0.05) * 1000)
+
+        probe = asyncio.create_task(lag_probe())
         await asyncio.sleep(1.0)
+        if a.timings:
+            await timings.reset()
         t_start = time.monotonic()
         await asyncio.gather(*(producer(rid) for rid in runs))
         wall = time.monotonic() - t_start
+        server = await timings.collect() if a.timings else None
         await asyncio.sleep(a.drain)
         stop.set()
+        probe.cancel()
         for t in viewers:
             t.cancel()
         await asyncio.gather(*viewers, return_exceptions=True)
@@ -106,6 +134,25 @@ async def main(a: argparse.Namespace) -> dict:
     try:
         stored = {str(r["id"]): r["last_seq"] for r in await db.fetch(
             "SELECT id, last_seq FROM runs WHERE id = ANY($1::uuid[])", [uuid.UUID(x) for x in runs])}
+        segments = None
+        if a.timings:
+            # Per-event decomposition of e2e. received_at = now() of the ingest transaction (its
+            # start, after the request got a connection). Same host clock for all containers.
+            rows = await db.fetch(
+                "SELECT value, extract(epoch FROM received_at)::float8 AS t FROM metrics WHERE run_id = ANY($1::uuid[])",
+                [uuid.UUID(x) for x in runs])
+            seg: dict[str, list[float]] = {"send_to_txn": [], "txn_to_ack": [], "txn_to_viewer": [],
+                                           "ack_to_viewer": []}
+            for r in rows:
+                v, t = r["value"], r["t"]
+                seg["send_to_txn"].append((t - v) * 1000)
+                if v in ack_at:
+                    seg["txn_to_ack"].append((ack_at[v] - t) * 1000)
+                if v in recv_at:
+                    seg["txn_to_viewer"].append((recv_at[v] - t) * 1000)
+                    if v in ack_at:
+                        seg["ack_to_viewer"].append((recv_at[v] - ack_at[v]) * 1000)
+            segments = {k: {"p50": pct(x, .5), "p95": pct(x, .95), "p99": pct(x, .99)} for k, x in seg.items()}
     finally:
         await db.close()
     lost = dup = 0
@@ -133,6 +180,9 @@ async def main(a: argparse.Namespace) -> dict:
         "viewer_events": len(e2e_ms),
         "viewer_lost_events": lost,
         "viewer_duplicate_events": dup,
+        "client_loop_lag_ms": {"p50": pct(client_lag, .5), "p99": pct(client_lag, .99)},
+        **({"server_ms": server} if server else {}),
+        **({"e2e_segments_ms": segments} if segments else {}),
     }
 
 
@@ -144,4 +194,6 @@ if __name__ == "__main__":
     ap.add_argument("--duration", type=float, default=60.0)
     ap.add_argument("--drain", type=float, default=5.0)
     ap.add_argument("--viewers", type=int, default=1, help="live viewers per run")
+    ap.add_argument("--timings", action="store_true", help="collect per-phase server timings")
+    ap.add_argument("--jitter", action="store_true", help="random start offset per producer")
     print(json.dumps(asyncio.run(main(ap.parse_args())), indent=2))

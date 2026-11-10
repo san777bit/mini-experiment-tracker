@@ -1,0 +1,78 @@
+﻿=== run 1
+{
+  "config": {
+    "writers": 600,
+    "procs": 3,
+    "seconds": 15.0,
+    "baseline": 5,
+    "pad_kb": 0
+  },
+  "noisy_project_events_per_s": 218.7,
+  "noisy_requests_per_s": 686.6,
+  "noisy_errors": {
+    "429": 7955
+  },
+  "victim_baseline_ms": {
+    "read": {
+      "p50": 7.8,
+      "p99": 10.7
+    },
+    "write": {
+      "p50": 13.8,
+      "p99": 17.5
+    }
+  },
+  "victim_under_attack_ms": {
+    "read": {
+      "p50": 9.4,
+      "p99": 111.8,
+      "max": 121.7
+    },
+    "write": {
+      "p50": 14.3,
+      "p99": 170.2,
+      "max": 252.1
+    }
+  },
+  "victim_errors": [],
+  "verdict": "DEGRADED"
+}
+=== run 2
+{
+  "config": {
+    "writers": 600,
+    "procs": 3,
+    "seconds": 15.0,
+    "baseline": 5,
+    "pad_kb": 0
+  },
+  "noisy_project_events_per_s": 224.2,
+  "noisy_requests_per_s": 682.6,
+  "noisy_errors": {
+    "429": 7792
+  },
+  "victim_baseline_ms": {
+    "read": {
+      "p50": 7.8,
+      "p99": 11.0
+    },
+    "write": {
+      "p50": 14.2,
+      "p99": 37.1
+    }
+  },
+  "victim_under_attack_ms": {
+    "read": {
+      "p50": 7.4,
+      "p99": 78.6,
+      "max": 192.8
+    },
+    "write": {
+      "p50": 13.3,
+      "p99": 48.2,
+      "max": 75.3
+    }
+  },
+  "victim_errors": [],
+  "verdict": "ISOLATED"
+}

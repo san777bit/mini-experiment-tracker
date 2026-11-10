@@ -1,0 +1,38 @@
+﻿{
+  "config": {
+    "writers": 200,
+    "seconds": 15.0,
+    "baseline": 5,
+    "pad_kb": 1900
+  },
+  "noisy_project_events_per_s": 43.4,
+  "noisy_errors": {
+    "429": 377,
+    "503": 84
+  },
+  "noisy_requests_per_s": 72.2,
+  "victim_baseline_ms": {
+    "read": {
+      "p50": 7.6,
+      "p99": 17.3
+    },
+    "write": {
+      "p50": 18.5,
+      "p99": 40.4
+    }
+  },
+  "victim_under_attack_ms": {
+    "read": {
+      "p50": 705.4,
+      "p99": 1864.0,
+      "max": 1864.0
+    },
+    "write": {
+      "p50": 1089.4,
+      "p99": 2146.1,
+      "max": 2146.1
+    }
+  },
+  "victim_errors": [],
+  "verdict": "DEGRADED"
+}

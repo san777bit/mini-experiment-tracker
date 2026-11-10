@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import time
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -10,8 +12,7 @@ import asyncpg
 
 from . import db
 from .db import DATABASE_URL
-from .limits import read_slot
-from .stats import STATS
+from .stats import STATS, TIMERS
 
 log = logging.getLogger("hub")
 
@@ -19,6 +20,9 @@ CHANNEL = "run_events"
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "2.0"))
 TAIL_MAX = int(os.environ.get("TAIL_MAX", "5000"))
 FETCH_PAGE = int(os.environ.get("STREAM_PAGE", "500")) * 10
+PAYLOAD_MAX = 7000          # NOTIFY payloads must stay under 8000 bytes
+PUSH_ENABLED = os.environ.get("TAIL_PUSH", "1") == "1"
+PID = os.getpid()
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,14 +31,21 @@ class Row:
     key: str
     step: int
     value: float
+    received: float = 0.0     # diagnostics only (epoch s): DB txn start, or commit time if pushed
 
 
 class RunTail:
-    """The newest rows of one run, fetched ONCE per process and shared by all its viewers.
+    """The newest rows of one run, shared by all viewers of that run in this process.
 
     Found by load/stress_fanout.py: with a query per viewer per wake-up, 1000 viewers turned
     6 events/s into ~4900 DB transactions/s and e2e p99 1.8 s. Invariant: `rows` is always a
     contiguous seq range (first_seq .. last_seq); a viewer behind first_seq reads from the DB.
+
+    Rows arrive two ways. push(): the process that committed them hands them over directly
+    (same process) or inside the NOTIFY payload (other processes), no DB read. run(): a DB read,
+    on start, every POLL_INTERVAL, and whenever a push cannot be applied contiguously. Both paths
+    only ever append seq == last_seq + 1, so the DB stays the source of truth and a pushed row
+    can never create or hide a hole.
     """
 
     def __init__(self, run_id: UUID, project_id: UUID, start_seq: int) -> None:
@@ -63,18 +74,49 @@ class RunTail:
         old, self._changed = self._changed, asyncio.Event()
         old.set()
 
+    def _append(self, rows: list[Row]) -> bool:
+        """Append the part of `rows` that continues the tail. False if there is a hole."""
+        fresh = [r for r in rows if r.seq > self.last_seq]
+        if not fresh:
+            return True
+        for r in fresh:
+            if r.seq != self.last_seq + 1:
+                return False
+            self.rows.append(r)
+            self.last_seq = r.seq
+        if len(self.rows) > TAIL_MAX:
+            del self.rows[: len(self.rows) - TAIL_MAX]
+        return True
+
+    def push(self, rows: list[Row] | None, last_seq: int) -> None:
+        """Rows committed by some process (None = 'something changed, read the DB')."""
+        if rows is None:
+            self.wake.set()
+            return
+        before = self.last_seq
+        if not self._append(rows):
+            STATS.inc("tail_push_gaps")      # e.g. two processes' NOTIFYs arrived out of order
+            self.wake.set()
+            return
+        if self.last_seq != before:
+            STATS.inc("tail_pushed_rows", self.last_seq - before)
+            TIMERS.add("commit_to_tail", (time.time() - rows[0].received) * 1000)
+            if last_seq > self.status[0]:
+                self.status = (last_seq, self.status[1])
+            self._publish()
+
     async def run(self) -> None:
         while True:
             self.wake.clear()
+            t0 = time.perf_counter()
             try:
-                async with read_slot(self.project_id), db.project_tx(self.project_id) as conn:
-                    run = await conn.fetchrow(
-                        "SELECT last_seq, conflicts FROM runs WHERE id = $1 AND project_id = $2",
-                        self.run_id, self.project_id)
-                    recs = await conn.fetch(
-                        """SELECT seq, metric_key, step, value FROM metrics
-                            WHERE run_id = $1 AND project_id = $2 AND seq > $3 ORDER BY seq LIMIT $4""",
-                        self.run_id, self.project_id, self.last_seq, FETCH_PAGE)
+                found = await db.fetch(
+                    "SELECT * FROM tail_fetch($1, $2, $3, $4)",
+                    self.run_id, self.project_id, self.last_seq, FETCH_PAGE,
+                    tenant=self.project_id, lane=db.HUB)
+                run = found[0] if found else None
+                recs = [Row(r["t_seq"], r["t_key"], r["t_step"], r["t_value"],
+                            r["t_received_at"].timestamp()) for r in found if r["t_seq"] is not None]
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -83,20 +125,20 @@ class RunTail:
                 await asyncio.sleep(1.0)
                 continue
             STATS.inc("tail_fetches")
-            changed = False
-            for r in recs:
-                if r["seq"] != self.last_seq + 1:      # cannot happen with per-run seq; never paper over it
-                    STATS.inc("tail_seq_breaks")
-                    log.error("tail seq break run=%s have=%s got=%s", self.run_id, self.last_seq, r["seq"])
-                    self.rows.clear()
-                    self.last_seq = r["seq"] - 1
-                self.rows.append(Row(r["seq"], r["metric_key"], r["step"], r["value"]))
-                self.last_seq = r["seq"]
-                changed = True
-            if len(self.rows) > TAIL_MAX:
-                del self.rows[: len(self.rows) - TAIL_MAX]
-            if run is not None and (run["last_seq"], run["conflicts"]) != self.status:
-                self.status = (run["last_seq"], run["conflicts"])
+            TIMERS.add("tail_fetch", (time.perf_counter() - t0) * 1000)
+            before = self.last_seq
+            if not self._append(recs):
+                # Cannot happen with per-run seq (the DB read starts at last_seq); never paper over it.
+                STATS.inc("tail_seq_breaks")
+                log.error("tail seq break run=%s have=%s got=%s", self.run_id, self.last_seq, recs[0].seq)
+                self.rows.clear()
+                self.last_seq = recs[0].seq - 1
+                self._append(recs)
+            changed = self.last_seq != before
+            if changed:
+                TIMERS.add("txn_start_to_tail", (time.time() - recs[0].received) * 1000)
+            if run is not None and (run["t_last_seq"], run["t_conflicts"]) != self.status:
+                self.status = (run["t_last_seq"], run["t_conflicts"])
                 changed = True
             if changed:
                 self._publish()
@@ -111,14 +153,16 @@ class RunTail:
 class Hub:
     """Owns one LISTEN connection per process and the shared tails of watched runs.
 
-    NOTIFY carries no data: it only wakes a tail, which reads from the DB. Tails also poll, so a
-    NOTIFY lost while the listener reconnects delays updates but never drops them.
+    NOTIFY carries the committed rows when they fit (else just "read the DB"). Tails also poll,
+    so a NOTIFY lost while the listener reconnects delays updates but never drops them.
     """
 
     def __init__(self) -> None:
         self._tails: dict[UUID, list] = {}      # run_id -> [RunTail, users]
         self._conn: asyncpg.Connection | None = None
         self._task: asyncio.Task[None] | None = None
+        self._pending: dict[UUID, list] = {}    # run_id -> [last_seq, rows | None]
+        self._notifier: asyncio.Task[None] | None = None
 
     async def acquire(self, run_id: UUID, project_id: UUID, start_seq: int) -> RunTail:
         entry = self._tails.get(run_id)
@@ -150,12 +194,76 @@ class Hub:
         for tail, _ in self._tails.values():
             tail.wake.set()
 
+    def publish(self, run_id: UUID, rows: list[Row] | None, last_seq: int) -> None:
+        """Called right after an ingest commit. rows=None: changed, but read it from the DB.
+
+        Round 4: tails read every new row from the DB (one pooled round trip per tail per
+        commit). Under bursts that queued behind commits and dominated e2e p99. Now the
+        committing process hands the rows to its own tail at once and to the other processes in
+        the NOTIFY payload; the DB read remains the fallback for anything that does not fit.
+        """
+        if not PUSH_ENABLED:
+            rows = None
+        entry = self._tails.get(run_id)
+        if entry is not None:
+            entry[0].push(rows, last_seq)
+        p = self._pending.get(run_id)
+        if p is None:
+            self._pending[run_id] = [last_seq, list(rows) if rows is not None else None]
+        else:
+            p[0] = max(p[0], last_seq)
+            p[1] = p[1] + rows if (p[1] is not None and rows is not None) else None
+        if self._notifier is None or self._notifier.done():
+            self._notifier = asyncio.create_task(self._flush_notifies())
+
+    @staticmethod
+    def _item(run_id: UUID, last_seq: int, rows: list[Row] | None) -> str:
+        item = {"r": str(run_id), "s": last_seq,
+                "rows": [[r.seq, r.key, r.step, r.value, r.received] for r in rows] if rows is not None else None}
+        text = json.dumps(item, separators=(",", ":"), ensure_ascii=False)
+        if len(text.encode()) > PAYLOAD_MAX - 100:          # too big to carry: hint only
+            STATS.inc("notify_rows_too_big")
+            item["rows"] = None
+            text = json.dumps(item, separators=(",", ":"))
+        return text
+
+    async def _flush_notifies(self) -> None:
+        """One background sender per process: while a NOTIFY is in flight, new ones accumulate and
+        go out together. Losing one (crash before it is sent) costs at most POLL_INTERVAL."""
+        while self._pending:
+            batch, self._pending = self._pending, {}
+            items = [self._item(rid, p[0], p[1]) for rid, p in batch.items()]
+            STATS.inc("notify_batches")
+            chunk: list[str] = []
+            size = 0
+            for it in items + [None]:  # type: ignore[list-item]
+                n = len(it.encode()) + 1 if it is not None else 0
+                if chunk and (it is None or size + n > PAYLOAD_MAX):
+                    payload = '{"p":%d,"i":[%s]}' % (PID, ",".join(chunk))
+                    try:
+                        await db.execute("SELECT pg_notify($1, $2)", CHANNEL, payload, lane=db.HUB)
+                    except Exception:
+                        STATS.inc("notify_errors")
+                        log.exception("notify failed")
+                    chunk, size = [], 0
+                if it is not None:
+                    chunk.append(it)
+                    size += n
+
     def _on_notify(self, _conn: object, _pid: int, _channel: str, payload: str) -> None:
         try:
-            run_id = UUID(payload.split(":", 1)[0])
-        except ValueError:
-            return
-        self.wake(run_id)
+            msg = json.loads(payload)
+            if msg["p"] == PID:
+                return                       # our own: already pushed to our tails
+            for it in msg["i"]:
+                entry = self._tails.get(UUID(it["r"]))
+                if entry is None:
+                    continue
+                rows = None if it["rows"] is None else [Row(*r) for r in it["rows"]]
+                entry[0].push(rows, it["s"])
+        except (ValueError, KeyError, TypeError):
+            STATS.inc("notify_bad_payload")
+            self._wake_all()                 # unknown content: read everything from the DB
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._supervise())

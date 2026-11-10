@@ -55,6 +55,31 @@ First page load = stream from `seq 0`, so there is one code path for snapshot an
 - Bodies over 2 MB → 413 before parsing; metric keys normalized to NFC; cursors limited to bigint.
 - Rejected conflicting values are stored once each in `metric_conflicts`; `runs.conflicts` counts distinct values.
 
+## Changed in round 3 (fairness and cheap rejections, see STRESS.md)
+- The hard per-project cap (12 of 20) is gone. Every pooled connection goes through a work-conserving, max-min
+  fair gate: a lone project can use all 20; when tenants wait, a released connection goes to the waiting tenant
+  holding the fewest. Writers of one run still queue in memory first (one per run per process reaches the DB).
+- Rejections happen before the body is read and without the DB, from the `Authorization` header alone: a key the DB
+  already rejected (cached; unknown and revoked keys never become valid) → 401; a project over its token-bucket
+  budget (300 req/s, burst 600, per process) → 429; a write to a run whose queue is full → 429 (only for the
+  owning project, so a foreign run id still looks missing). The key→project cache is used only to charge budgets,
+  never to grant access: the DB check and the in-transaction key re-check are unchanged.
+- Ingest is one statement: plpgsql `ingest_batch` (row lock, key re-check, classify, insert, bump `last_seq`).
+  Statements inside a VOLATILE plpgsql function take fresh snapshots, so reads after the lock see the previous
+  writer's commit; a single CTE statement would not (its snapshot predates the lock wait).
+
+## Changed in round 4 (latency, see PERF.md)
+- Live rows are pushed, not re-read: after commit the ingesting process gives the new rows to its own tail and puts them
+  in the NOTIFY payload for the others (hint only if they do not fit or a conflict changed the counter). A tail appends
+  only `seq == last_seq + 1`; a hole (e.g. two processes' NOTIFYs out of order) falls back to a DB read, and tails still
+  poll every 2 s. The DB stays the source of truth; the page's contiguity check is unchanged.
+- NOTIFY is sent off the request path by one background sender per process, batched while one is in flight.
+- Ingest and run creation skip the separate key lookup for a key this process verified recently; their transaction
+  re-checks the key `FOR SHARE` anyway (a stale cache entry ends in 401 there and is dropped). Reads always hit the DB.
+- Tail reads are one SQL function (`tail_fetch`); tails and NOTIFY use their own small pool lane.
+- No reset query on connection release (pool connections hold no session state); whole pool opened at boot.
+- Per-process request budget raised to 1000/s (300/s throttled a legitimate single-project load on its busiest worker).
+
 ## Known weak spots (to attack in tests)
 Per-run lock throughput; single API process holds the stream hub; full replay on first load grows with run size;
 first-write-wins hides a client bug unless someone reads `conflicts`; key in browser memory.

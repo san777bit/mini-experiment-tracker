@@ -1,0 +1,234 @@
+﻿=== run 1
+{
+  "config": {
+    "runs": 50,
+    "rate": 10.0,
+    "batch": 1,
+    "duration": 40.0,
+    "drain": 5.0,
+    "viewers": 1,
+    "timings": true
+  },
+  "target_events_per_s": 500.0,
+  "achieved_events_per_s": 499.4,
+  "events_sent": 20000,
+  "events_stored": 20000,
+  "request_errors": {},
+  "schedule_misses": 2715,
+  "ingest_ms": {
+    "p50": 34.0,
+    "p95": 120.0,
+    "p99": 167.2,
+    "max": 328.2
+  },
+  "e2e_ms": {
+    "p50": 49.6,
+    "p95": 171.4,
+    "p99": 251.4,
+    "max": 403.8
+  },
+  "viewer_events": 20000,
+  "viewer_lost_events": 0,
+  "viewer_duplicate_events": 0,
+  "client_loop_lag_ms": {
+    "p50": 0.7,
+    "p99": 9.9
+  },
+  "server_ms": {
+    "workers": 4,
+    "db_conn_wait": {
+      "n": 52608,
+      "p50": 0.06,
+      "p95": 21.45,
+      "p99": 68.79,
+      "max": 186.9
+    },
+    "gate_used": {
+      "n": 3120,
+      "p50": 0,
+      "p95": 20,
+      "p99": 20,
+      "max": 20
+    },
+    "gate_waiters": {
+      "n": 3120,
+      "p50": 0,
+      "p95": 17,
+      "p99": 39,
+      "max": 61
+    },
+    "ingest_fn": {
+      "n": 20000,
+      "p50": 9.79,
+      "p95": 20.69,
+      "p99": 40.18,
+      "max": 206.3
+    },
+    "ingest_handler": {
+      "n": 20000,
+      "p50": 24.0,
+      "p95": 92.25,
+      "p99": 145.22,
+      "max": 239.6
+    },
+    "ingest_run_queue": {
+      "n": 20000,
+      "p50": 4.73,
+      "p95": 17.41,
+      "p99": 38.48,
+      "max": 85.4
+    },
+    "loop_lag": {
+      "n": 3123,
+      "p50": 0.49,
+      "p95": 5.58,
+      "p99": 16.35,
+      "max": 70.8
+    },
+    "pool_idle": {
+      "n": 3120,
+      "p50": 20,
+      "p95": 20,
+      "p99": 20,
+      "max": 20
+    },
+    "request_ingest_200": {
+      "n": 20000,
+      "p50": 24.35,
+      "p95": 94.34,
+      "p99": 148.11,
+      "max": 267.6
+    },
+    "tail_fetch": {
+      "n": 27188,
+      "p50": 2.43,
+      "p95": 32.02,
+      "p99": 79.52,
+      "max": 163.6
+    },
+    "txn_start_to_tail": {
+      "n": 19416,
+      "p50": 26.17,
+      "p95": 73.36,
+      "p99": 128.24,
+      "max": 229.5
+    }
+  }
+}
+=== run 2
+{
+  "config": {
+    "runs": 50,
+    "rate": 10.0,
+    "batch": 1,
+    "duration": 40.0,
+    "drain": 5.0,
+    "viewers": 1,
+    "timings": true
+  },
+  "target_events_per_s": 500.0,
+  "achieved_events_per_s": 499.2,
+  "events_sent": 20000,
+  "events_stored": 20000,
+  "request_errors": {},
+  "schedule_misses": 3395,
+  "ingest_ms": {
+    "p50": 36.9,
+    "p95": 131.6,
+    "p99": 165.2,
+    "max": 201.7
+  },
+  "e2e_ms": {
+    "p50": 57.6,
+    "p95": 191.0,
+    "p99": 265.5,
+    "max": 451.2
+  },
+  "viewer_events": 20000,
+  "viewer_lost_events": 0,
+  "viewer_duplicate_events": 0,
+  "client_loop_lag_ms": {
+    "p50": 0.6,
+    "p99": 8.6
+  },
+  "server_ms": {
+    "workers": 4,
+    "db_conn_wait": {
+      "n": 55445,
+      "p50": 0.07,
+      "p95": 37.65,
+      "p99": 91.22,
+      "max": 153.4
+    },
+    "gate_used": {
+      "n": 3131,
+      "p50": 0,
+      "p95": 20,
+      "p99": 20,
+      "max": 20
+    },
+    "gate_waiters": {
+      "n": 3131,
+      "p50": 0,
+      "p95": 32,
+      "p99": 54,
+      "max": 82
+    },
+    "ingest_fn": {
+      "n": 20000,
+      "p50": 9.29,
+      "p95": 19.76,
+      "p99": 34.36,
+      "max": 89.3
+    },
+    "ingest_handler": {
+      "n": 20000,
+      "p50": 25.08,
+      "p95": 104.14,
+      "p99": 140.68,
+      "max": 182.8
+    },
+    "ingest_run_queue": {
+      "n": 20000,
+      "p50": 5.26,
+      "p95": 18.42,
+      "p99": 30.92,
+      "max": 83.2
+    },
+    "loop_lag": {
+      "n": 3133,
+      "p50": 0.47,
+      "p95": 5.33,
+      "p99": 15.63,
+      "max": 66.3
+    },
+    "pool_idle": {
+      "n": 3131,
+      "p50": 20,
+      "p95": 20,
+      "p99": 20,
+      "max": 20
+    },
+    "request_ingest_200": {
+      "n": 20000,
+      "p50": 25.88,
+      "p95": 110.46,
+      "p99": 142.08,
+      "max": 176.5
+    },
+    "tail_fetch": {
+      "n": 30459,
+      "p50": 2.74,
+      "p95": 48.42,
+      "p99": 108.6,
+      "max": 162.6
+    },
+    "txn_start_to_tail": {
+      "n": 19386,
+      "p50": 28.68,
+      "p95": 78.99,
+      "p99": 130.78,
+      "max": 235.8
+    }
+  }
+}

@@ -22,8 +22,11 @@ services:
       DATABASE_URL: postgresql://app:app@db:5432/tracker
       ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}   # 1 process saturates one core at ~320-410 events/s
-      DB_POOL_MAX: "20"                        # per process: 4 x 20 + 4 listeners < max_connections 100
-      PROJECT_DB_SLOTS: "12"                   # one project may use 12 of 20 (6 of 10 cost 6% throughput)
+      DB_POOL_MAX: "20"                        # per process, both lanes: 4 x 20 + 4 listeners < max_connections 100
+      ACCESS_LOG: ${ACCESS_LOG:-1}
+      DB_HUB_POOL: "4"                         # tail reads / NOTIFY (22/2 measured no better: results/perf_o8_*)
+      PROJECT_RPS: ${PROJECT_RPS:-1000}         # per project per process, checked before the body is read
+      PROJECT_BURST: ${PROJECT_BURST:-2000}
     depends_on:
       db:
         condition: service_healthy

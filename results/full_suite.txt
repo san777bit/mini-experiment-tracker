@@ -1,100 +1,13 @@
-﻿============================= test session starts =============================
-platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\pgrga\OneDrive\Документы\taskforwork\.venv\Scripts\python.exe
-cachedir: .pytest_cache
-hypothesis profile 'default'
-rootdir: C:\Users\pgrga\OneDrive\Документы\taskforwork
-configfile: pytest.ini
-testpaths: tests
-plugins: anyio-4.16.0, hypothesis-6.170.15, asyncio-1.4.1.post1
-asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
-collecting ... collected 43 items
-
-tests/test_consistency_e2e.py::test_page_matches_db_under_chaos [producer] 98 requests, 15 failed attempts, 83 acked batches, accepted=610 duplicates=504 conflicts=7
-[page] applied=750 reconnects=4 gaps=0 repeats_ignored=0 conflicts=5
-[producer] points committed in requests whose response was lost: 140
-[compare] db=750 page=750 missing=0 extra=0 wrong_value=0
-PASSED
-tests/test_consistency_e2e.py::test_client_offline_30s_catches_up [offline] offline=42.9s, page during outage: conn=reconnecting applied=20 reconnects=9; caught up in 3.4s (reconnect backoff max 5 s + jitter)
-PASSED
-tests/test_ingest_property.py::test_any_order_any_repetition_same_state PASSED
-tests/test_isolation.py::test_foreign_run_is_indistinguishable_from_missing GET /api/runs/<B>: foreign=404 missing=404
-GET /api/runs/<B>/metrics: foreign=404 missing=404
-GET /api/runs/<B>/metrics?after=0&limit=5000: foreign=404 missing=404
-POST /api/runs/<B>/metrics: foreign=404 missing=404
-GET /api/runs/<B>/conflicts: foreign=404 missing=404
-GET /api/runs/<B>/stream: foreign=404 missing=404
-PASSED
-tests/test_isolation.py::test_list_and_stream_show_only_own_runs PASSED
-tests/test_isolation.py::test_bad_keys PASSED
-tests/test_isolation.py::test_ids_are_not_guessable_and_seq_is_per_run PASSED
-tests/test_isolation.py::test_rls_is_a_second_wall PASSED
-tests/test_isolation.py::test_no_cacheable_responses PASSED
-tests/test_isolation.py::test_errors_do_not_echo_input PASSED
-tests/test_isolation.py::test_timing_foreign_vs_missing [timing] n=300 median foreign=14.849ms missing=14.925ms diff=-0.076ms p90 foreign=17.115 missing=16.913
-PASSED
-tests/test_isolation.py::test_logs_do_not_contain_keys_or_values PASSED
-tests/test_silent_failures.py::test_events_lost_on_reconnect_with_concurrent_writers [reconnect] writers=16 events=1920 reader_events=1920
-PASSED
-tests/test_silent_failures.py::test_duplicate_batch_sent_concurrently [dups] accepted=100 duplicates=1900
-PASSED
-tests/test_silent_failures.py::test_conflict_counter_counts_distinct_values_not_retries [conflicts] runs.conflicts=2 audit=[{'key': 'k', 'step': 1, 'rejected': 2.0, 'stored': 1.0, 'seen_at': '2026-11-09T21:17:40.057181+00:00'}, {'key': 'k', 'step': 1, 'rejected': 3.0, 'stored': 1.0, 'seen_at': '2026-11-09T21:17:40.405197+00:00'}]
-PASSED
-tests/test_silent_failures.py::test_slow_reader_gets_everything [slow] api mem before=185.7MiB / 7.758GiB while stalled=187.4MiB / 7.758GiB; received=20000
-PASSED
-tests/test_silent_failures.py::test_partial_write_is_impossible_bad_event_mid_batch[bad\x00key] [partial] key='bad\x00key' status=422 body={"error":"invalid","details":[{"loc":["body","events",2,"key"],"msg":"Value error, key must not contain control characters"}]}
-PASSED
-tests/test_silent_failures.py::test_partial_write_is_impossible_bad_event_mid_batch[bad\ud800key] [partial] key='bad\ud800key' status=422 body={"error":"invalid","details":[{"loc":["body","events",2,"key"],"msg":"Input should be a valid string, unable to parse raw data as a unicode string"}]}
-PASSED
-tests/test_silent_failures.py::test_old_key_stops_working_after_rotation [rotate] stream opened with old key closed 5.5s after rotation; events=['hello', 'status', 'revoked']
-PASSED
-tests/test_silent_failures.py::test_lost_notify_does_not_lose_events [listener] killed=4 delivered=50 in 3.5s listener_connects=1 tail_polls=4
-PASSED
-tests/test_silent_failures.py::test_api_crash_mid_ingest_leaves_no_partial_batch [crash] sent=15 acked=11 stored_batches=11 partial=0 stored_without_ack=0
-PASSED
-tests/test_stress_edges.py::test_write_authenticated_before_rotation_cannot_commit_after_it [race] late write with revoked key -> 401, stored={}
-PASSED
-tests/test_stress_edges.py::test_concurrent_rotations_leave_exactly_one_valid_key [rot2] 10 concurrent rotations: 1 succeeded, active keys now=1
-PASSED
-tests/test_stress_edges.py::test_huge_body_is_rejected_before_it_is_parsed [body] 200 MB -> 413 in 0.3s; api mem before=180.7MiB / 7.758GiB samples=['180.8MiB / 7.758GiB']
-PASSED
-tests/test_stress_edges.py::test_huge_chunked_body_is_cut_off [chunked] 100 MB chunked -> 413 in 0.9s
-PASSED
-tests/test_stress_edges.py::test_resume_cursor_out_of_range[99999999999999999999999-None] [cursor] header='99999999999999999999999' query=None stream=422 history=422
-PASSED
-tests/test_stress_edges.py::test_resume_cursor_out_of_range[-1-None] [cursor] header='-1' query=None stream=422 history=422
-PASSED
-tests/test_stress_edges.py::test_resume_cursor_out_of_range[1e3-None] [cursor] header='1e3' query=None stream=422 history=422
-PASSED
-tests/test_stress_edges.py::test_resume_cursor_out_of_range[1_000-None] [cursor] header='1_000' query=None stream=422 history=200
-PASSED
-tests/test_stress_edges.py::test_resume_cursor_out_of_range[+5-None] [cursor] header='+5' query=None stream=422 history=200
-PASSED
-tests/test_stress_edges.py::test_resume_cursor_out_of_range[None-99999999999999999999999] [cursor] header=None query='99999999999999999999999' stream=422 history=422
-PASSED
-tests/test_stress_edges.py::test_odd_client_timestamps[2026-01-01T00:00:00] [ts] '2026-01-01T00:00:00' -> 200 {"accepted":1,"duplicates":0,"conflicts":0,"last_seq":1}
-PASSED
-tests/test_stress_edges.py::test_odd_client_timestamps[2026-01-01T00:00:00+14:00] [ts] '2026-01-01T00:00:00+14:00' -> 200 {"accepted":1,"duplicates":0,"conflicts":0,"last_seq":1}
-PASSED
-tests/test_stress_edges.py::test_odd_client_timestamps[0001-01-01T00:00:00Z] [ts] '0001-01-01T00:00:00Z' -> 200 {"accepted":1,"duplicates":0,"conflicts":0,"last_seq":1}
-PASSED
-tests/test_stress_edges.py::test_odd_client_timestamps[9999-12-31T23:59:59Z] [ts] '9999-12-31T23:59:59Z' -> 200 {"accepted":1,"duplicates":0,"conflicts":0,"last_seq":1}
-PASSED
-tests/test_stress_edges.py::test_odd_client_timestamps[2026-02-30T00:00:00Z] [ts] '2026-02-30T00:00:00Z' -> 422 {"error":"invalid","details":[{"loc":["body","events",0,"ts"],"msg":"Input should be a valid datetime or date, day value
-PASSED
-tests/test_stress_edges.py::test_odd_client_timestamps[1e10] [ts] '1e10' -> 422 {"error":"invalid","details":[{"loc":["body","events",0,"ts"],"msg":"Input should be a valid datetime or date, input is 
-PASSED
-tests/test_stress_edges.py::test_float_edges_round_trip_exactly [floats] 1e400 -> 422; sse=[-0.0, 5e-324, 1.7976931348623157e+308, -1.7976931348623157e+308, 0.30000000000000004, 1e-300]
-PASSED
-tests/test_stress_edges.py::test_unicode_keys_that_look_identical_are_one_metric [unicode] stored keys=[b'pr\\xe9cision']
-PASSED
-tests/test_stress_edges.py::test_page_is_not_injectable_and_shows_edge_values [xss] window.__xss=None injected_imgs=0 page_errors=[]
-PASSED
-tests/test_stress_heavy.py::test_postgres_restart_under_load [dbrestart] restart took 1.0s; first acked write 0.0s after DB back; failed attempts=0; page synced 0.0s after last write; reconnects=0 gaps=0
-PASSED
-tests/test_stress_heavy.py::test_long_run_page_open_and_stay_live [long] 100000 points loaded via API in 14.7s; page synced in 5.0s; JS heap=65 MiB; live lag samples (events behind)=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; final live sync 5.7s; long tasks={'n': 76, 'worst': 83}
-PASSED
-tests/test_stress_partition.py::test_api_recovers_after_db_partition SKIPPED
-
+...................................................s                     [100%]
+============================= slowest 8 durations =============================
+108.94s call     tests/test_stress_heavy.py::test_long_run_page_open_and_stay_live
+56.16s call     tests/test_consistency_e2e.py::test_client_offline_30s_catches_up
+49.58s call     tests/test_ingest_property.py::test_any_order_any_repetition_same_state
+43.65s call     tests/test_stress_heavy.py::test_postgres_restart_under_load
+16.18s call     tests/test_consistency_e2e.py::test_page_matches_db_under_chaos
+15.64s call     tests/test_silent_failures.py::test_events_lost_on_reconnect_with_concurrent_writers
+11.85s call     tests/test_isolation.py::test_timing_foreign_vs_missing
+11.25s call     tests/test_round3.py::test_requests_with_a_rejected_key_do_not_touch_the_db
 =========================== short test summary info ===========================
 SKIPPED [1] tests\test_stress_partition.py:40: API is not routed through toxiproxy (chaos mode)
-================== 42 passed, 1 skipped in 360.99s (0:06:00) ==================
+51 passed, 1 skipped in 420.50s (0:07:00)

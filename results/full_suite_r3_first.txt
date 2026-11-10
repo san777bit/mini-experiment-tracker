@@ -1,0 +1,4 @@
+..........................................s                              [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_stress_partition.py:40: API is not routed through toxiproxy (chaos mode)
+42 passed, 1 skipped in 411.88s (0:06:51)

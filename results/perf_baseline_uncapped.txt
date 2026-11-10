@@ -1,0 +1,91 @@
+﻿{
+  "config": {
+    "runs": 50,
+    "rate": 10.0,
+    "batch": 1,
+    "duration": 45.0,
+    "drain": 5.0,
+    "viewers": 1,
+    "timings": true
+  },
+  "target_events_per_s": 500.0,
+  "achieved_events_per_s": 435.0,
+  "events_sent": 19629,
+  "events_stored": 19629,
+  "request_errors": {},
+  "schedule_misses": 19303,
+  "ingest_ms": {
+    "p50": 48.1,
+    "p95": 276.2,
+    "p99": 385.0,
+    "max": 531.7
+  },
+  "e2e_ms": {
+    "p50": 141.2,
+    "p95": 298.2,
+    "p99": 407.1,
+    "max": 599.9
+  },
+  "viewer_events": 19629,
+  "viewer_lost_events": 0,
+  "viewer_duplicate_events": 0,
+  "server_ms": {
+    "workers": 4,
+    "auth_db": {
+      "n": 19629,
+      "p50": 5.02,
+      "p95": 84.76,
+      "p99": 127.92,
+      "max": 248.2
+    },
+    "db_conn_wait": {
+      "n": 81162,
+      "p50": 0.07,
+      "p95": 63.37,
+      "p99": 97.18,
+      "max": 213.0
+    },
+    "ingest_fn": {
+      "n": 19629,
+      "p50": 9.27,
+      "p95": 18.68,
+      "p99": 27.99,
+      "max": 280.4
+    },
+    "ingest_handler": {
+      "n": 19629,
+      "p50": 18.32,
+      "p95": 171.28,
+      "p99": 249.65,
+      "max": 383.1
+    },
+    "ingest_notify": {
+      "n": 19629,
+      "p50": 4.73,
+      "p95": 83.91,
+      "p99": 130.47,
+      "max": 251.1
+    },
+    "ingest_run_queue": {
+      "n": 19629,
+      "p50": 1.13,
+      "p95": 9.02,
+      "p99": 13.87,
+      "max": 51.0
+    },
+    "loop_lag": {
+      "n": 3518,
+      "p50": 0.59,
+      "p95": 5.67,
+      "p99": 11.35,
+      "max": 29.9
+    },
+    "request_ingest_200": {
+      "n": 19629,
+      "p50": 24.14,
+      "p95": 256.43,
+      "p99": 358.36,
+      "max": 512.3
+    }
+  }
+}

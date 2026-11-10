@@ -24,5 +24,14 @@ in `results/`, not from the assistant's description.
 - **Self-inflicted regression.** Its per-project DB limit cut a single big project's throughput by 6% until the load
   test caught it and the limit was retuned.
 
+- **Round 3 benchmark artifact.** Its noisy-neighbour script ran victim and attackers in one event loop; after the
+  fix the victim looked no better. Splitting attackers into separate processes showed part of round 2's "185 ms" was
+  the generator itself. Same class of mistake as the httpx one; all round-3 numbers were re-taken.
+- **Round 3 prediction.** It expected a request-count budget to cover big bodies; it did not (byte budget added).
+
+- **Round 4.** It set the per-process request budget too low in round 3; a legitimate load got 429s and the
+  generator hid it (latency printed, errors not). One of its timers measured the wrong row of a batch. Three of its
+  optimizations (commit_delay, pool split, access log off) did nothing measurable and were reverted.
+
 ## What I verified or redid myself
 - TODO (fill in before sending): which files I read line by line, what I reran by hand, what I changed.

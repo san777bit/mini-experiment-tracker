@@ -1,0 +1,128 @@
+﻿=== after round 1
+{
+  "config": {
+    "runs": 50,
+    "rate": 10.0,
+    "batch": 1,
+    "duration": 60.0,
+    "drain": 5.0,
+    "viewers": 1
+  },
+  "target_events_per_s": 500.0,
+  "achieved_events_per_s": 499.5,
+  "events_sent": 30000,
+  "events_stored": 30000,
+  "request_errors": {},
+  "schedule_misses": 13426,
+  "ingest_ms": {
+    "p50": 53.9,
+    "p95": 166.4,
+    "p99": 237.2,
+    "max": 399.1
+  },
+  "e2e_ms": {
+    "p50": 77.1,
+    "p95": 212.6,
+    "p99": 285.8,
+    "max": 470.8
+  },
+  "viewer_events": 30000,
+  "viewer_lost_events": 0,
+  "viewer_duplicate_events": 0
+}
+=== before round 1
+{
+  "config": {
+    "runs": 50,
+    "rate": 10.0,
+    "batch": 1,
+    "duration": 60.0,
+    "drain": 5.0,
+    "viewers": 1
+  },
+  "target_events_per_s": 500.0,
+  "achieved_events_per_s": 489.7,
+  "events_sent": 29453,
+  "events_stored": 29453,
+  "request_errors": {},
+  "schedule_misses": 27397,
+  "ingest_ms": {
+    "p50": 38.2,
+    "p95": 263.5,
+    "p99": 314.5,
+    "max": 630.0
+  },
+  "e2e_ms": {
+    "p50": 144.2,
+    "p95": 388.2,
+    "p99": 475.8,
+    "max": 871.5
+  },
+  "viewer_events": 29453,
+  "viewer_lost_events": 0,
+  "viewer_duplicate_events": 0
+}
+=== after round 2
+{
+  "config": {
+    "runs": 50,
+    "rate": 10.0,
+    "batch": 1,
+    "duration": 60.0,
+    "drain": 5.0,
+    "viewers": 1
+  },
+  "target_events_per_s": 500.0,
+  "achieved_events_per_s": 495.4,
+  "events_sent": 29762,
+  "events_stored": 29762,
+  "request_errors": {},
+  "schedule_misses": 8457,
+  "ingest_ms": {
+    "p50": 58.3,
+    "p95": 139.6,
+    "p99": 197.0,
+    "max": 810.3
+  },
+  "e2e_ms": {
+    "p50": 70.2,
+    "p95": 167.0,
+    "p99": 236.5,
+    "max": 841.1
+  },
+  "viewer_events": 29762,
+  "viewer_lost_events": 0,
+  "viewer_duplicate_events": 0
+}
+=== before round 2
+{
+  "config": {
+    "runs": 50,
+    "rate": 10.0,
+    "batch": 1,
+    "duration": 60.0,
+    "drain": 5.0,
+    "viewers": 1
+  },
+  "target_events_per_s": 500.0,
+  "achieved_events_per_s": 410.5,
+  "events_sent": 24690,
+  "events_stored": 24690,
+  "request_errors": {},
+  "schedule_misses": 24494,
+  "ingest_ms": {
+    "p50": 131.9,
+    "p95": 264.2,
+    "p99": 368.3,
+    "max": 721.9
+  },
+  "e2e_ms": {
+    "p50": 190.4,
+    "p95": 415.5,
+    "p99": 546.3,
+    "max": 876.7
+  },
+  "viewer_events": 24690,
+  "viewer_lost_events": 0,
+  "viewer_duplicate_events": 0
+}

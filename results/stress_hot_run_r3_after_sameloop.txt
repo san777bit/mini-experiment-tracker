@@ -1,0 +1,152 @@
+﻿{
+  "config": {
+    "writers": 200,
+    "seconds": 15.0,
+    "baseline": 5,
+    "pad_kb": 0
+  },
+  "noisy_project_events_per_s": 203.8,
+  "noisy_errors": {
+    "429": 38518,
+    "503": 86
+  },
+  "noisy_requests_per_s": 2616.6,
+  "victim_baseline_ms": {
+    "read": {
+      "p50": 3.4,
+      "p99": 9.1
+    },
+    "write": {
+      "p50": 8.4,
+      "p99": 33.6
+    }
+  },
+  "victim_under_attack_ms": {
+    "read": {
+      "p50": 200.3,
+      "p99": 635.4,
+      "max": 635.4
+    },
+    "write": {
+      "p50": 198.8,
+      "p99": 672.3,
+      "max": 672.3
+    }
+  },
+  "victim_errors": [],
+  "verdict": "DEGRADED"
+}
+=== run 1
+{
+  "config": {
+    "writers": 200,
+    "seconds": 15.0,
+    "baseline": 5,
+    "pad_kb": 0
+  },
+  "noisy_project_events_per_s": 220.8,
+  "noisy_errors": {
+    "429": 16
+  },
+  "noisy_requests_per_s": 221.8,
+  "victim_baseline_ms": {
+    "read": {
+      "p50": 7.4,
+      "p99": 9.7
+    },
+    "write": {
+      "p50": 14.0,
+      "p99": 49.9
+    }
+  },
+  "victim_under_attack_ms": {
+    "read": {
+      "p50": 6.1,
+      "p99": 13.9,
+      "max": 32.5
+    },
+    "write": {
+      "p50": 12.5,
+      "p99": 49.3,
+      "max": 66.7
+    }
+  },
+  "victim_errors": [],
+  "verdict": "ISOLATED"
+}
+=== run 2
+{
+  "config": {
+    "writers": 200,
+    "seconds": 15.0,
+    "baseline": 5,
+    "pad_kb": 0
+  },
+  "noisy_project_events_per_s": 233.9,
+  "noisy_errors": {
+    "429": 1574
+  },
+  "noisy_requests_per_s": 332.2,
+  "victim_baseline_ms": {
+    "read": {
+      "p50": 7.6,
+      "p99": 9.8
+    },
+    "write": {
+      "p50": 13.9,
+      "p99": 18.2
+    }
+  },
+  "victim_under_attack_ms": {
+    "read": {
+      "p50": 6.2,
+      "p99": 111.3,
+      "max": 155.4
+    },
+    "write": {
+      "p50": 11.6,
+      "p99": 47.0,
+      "max": 48.0
+    }
+  },
+  "victim_errors": [],
+  "verdict": "DEGRADED"
+}
+=== run 3
+{
+  "config": {
+    "writers": 200,
+    "seconds": 15.0,
+    "baseline": 5,
+    "pad_kb": 0
+  },
+  "noisy_project_events_per_s": 238.9,
+  "noisy_errors": {
+    "429": 892
+  },
+  "noisy_requests_per_s": 294.6,
+  "victim_baseline_ms": {
+    "read": {
+      "p50": 8.2,
+      "p99": 10.1
+    },
+    "write": {
+      "p50": 13.8,
+      "p99": 50.9
+    }
+  },
+  "victim_under_attack_ms": {
+    "read": {
+      "p50": 5.7,
+      "p99": 24.9,
+      "max": 61.0
+    },
+    "write": {
+      "p50": 11.4,
+      "p99": 31.4,
+      "max": 46.7
+    }
+  },
+  "victim_errors": [],
+  "verdict": "ISOLATED"
+}

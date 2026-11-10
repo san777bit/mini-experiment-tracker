@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 import unicodedata
 import uuid
@@ -24,11 +25,13 @@ from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from . import db
-from .auth import Auth, key_is_active, new_key, recheck_key_in_tx, require_admin, require_project
-from .errors import NOT_FOUND, ApiError
+from .auth import (KEYS, Auth, bearer_token, hash_key, key_is_active, new_key, recheck_key_in_tx,
+                   require_admin, require_project, require_project_for_write)
+from .errors import NOT_FOUND, UNAUTHORIZED, ApiError
 from .hub import HUB, Row
-from .limits import read_slot, write_slot
-from .stats import STATS
+from . import limits
+from .limits import BUCKETS, BYTE_BUCKETS, RUN_QUEUES, write_slot
+from .stats import STATS, TIMERS, loop_lag_monitor
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("api")
@@ -45,9 +48,22 @@ STATIC = Path(__file__).parent / "static"
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await db.init_pool()
     await HUB.start()
+    lag = asyncio.create_task(loop_lag_monitor())
+    gate_mon = asyncio.create_task(_gate_monitor())
     yield
+    lag.cancel()
+    gate_mon.cancel()
     await HUB.stop()
     await db.close_pool()
+
+
+async def _gate_monitor() -> None:
+    """Diagnostics: connections in use / tenants waiting, sampled every 50 ms."""
+    while True:
+        await asyncio.sleep(0.05)
+        TIMERS.add("gate_used", db.GATE.used)
+        TIMERS.add("gate_waiters", sum(len(q) for q in db.GATE.waiting.values()))
+        TIMERS.add("pool_idle", db.pool().get_idle_size())
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -82,14 +98,18 @@ class AccessMiddleware:
         try:
             await self.inner(scope, receive, send_wrapper)
         finally:
+            if scope["method"] == "POST" and scope["path"].endswith("/metrics"):
+                TIMERS.add(f"request_ingest_{status}", (time.perf_counter() - started) * 1000)
             # Path only (no query string, no headers, no body): keys travel in a header.
-            log.info(
-                "%s %s %s %.1fms rid=%s",
-                scope["method"], scope["path"], status,
-                (time.perf_counter() - started) * 1000, rid,
-            )
+            if ACCESS_LOG:
+                log.info(
+                    "%s %s %s %.1fms rid=%s",
+                    scope["method"], scope["path"], status,
+                    (time.perf_counter() - started) * 1000, rid,
+                )
 
 
+ACCESS_LOG = os.environ.get("ACCESS_LOG", "1") == "1"
 MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", str(2 * 1024 * 1024)))  # 1000 events need ~250 KB
 
 
@@ -147,13 +167,98 @@ class BodyLimitMiddleware:
         await self.inner(scope, replay, send)
 
 
+METRICS_PATH = re.compile(r"^/api/runs/([0-9a-fA-F-]{32,36})/metrics$")
+
+
+class RateLimitMiddleware:
+    """Cheap rejections, before the body is read and before the DB is touched.
+
+    Found by load/stress_hot_run.py (round 3 baseline): a client that ignores 429 still cost a
+    DB key lookup, a full body read and JSON validation per request; the quiet project's reads
+    went to p99 393 ms, and to 1.9 s when the ignored requests carried 1.9 MB bodies.
+    Here, from the Authorization header alone: a key the DB already rejected -> 401; a key whose
+    project is out of budget -> 429; a write to a run whose queue is full -> 429. A key this
+    process has not seen yet passes through to the normal, DB-backed check.
+    """
+
+    def __init__(self, inner: ASGIApp) -> None:
+        self.inner = inner
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        path = scope.get("path", "")
+        if scope["type"] != "http" or not path.startswith("/api/") or path.startswith("/api/admin/"):
+            await self.inner(scope, receive, send)
+            return
+        header = next((v for k, v in scope["headers"] if k == b"authorization"), None)
+        token = bearer_token(header.decode("latin-1")) if header is not None else None
+        if token is not None:
+            digest = hash_key(token)
+            if KEYS.is_bad(digest):
+                STATS.inc("rejected_early_bad_key")
+                await JSONResponse({"error": UNAUTHORIZED.code}, status_code=401)(scope, receive, send)
+                return
+            project = KEYS.project_of(digest)
+            if project is not None:
+                code = None
+                has_body = scope["method"] in ("POST", "PUT", "PATCH")
+                length = next((v for k, v in scope["headers"] if k == b"content-length"), None)
+                size = int(length) if length is not None and length.isdigit() else None
+                if size is not None and size > MAX_BODY:
+                    # Found by test_huge_body_is_rejected_before_it_is_parsed: the byte budget answered
+                    # 429 (retry later) to a body that can never be accepted, so a client would retry it
+                    # forever. Oversized is a permanent 413, decided by BodyLimitMiddleware.
+                    has_body = False
+                if not BUCKETS.allow(project):
+                    code = "rate_limited"
+                elif has_body and not BYTE_BUCKETS.allow(project, size or 0):
+                    code = "rate_limited"
+                elif scope["method"] == "POST" and (m := METRICS_PATH.match(path)):
+                    try:
+                        if RUN_QUEUES.full(UUID(m.group(1)), project):
+                            code = "run_busy"
+                    except ValueError:
+                        pass
+                if code is not None:
+                    STATS.inc(f"rejected_early_{code}")
+                    await self._tarpit()
+                    await JSONResponse({"error": code}, status_code=429,
+                                       headers={"Retry-After": "1"})(scope, receive, send)
+                    return
+                if has_body and size is None:
+                    receive = self._metered(receive, project)   # chunked: charge what arrives
+        await self.inner(scope, receive, send)
+
+    _sleeping = 0
+
+    async def _tarpit(self) -> None:
+        cls = type(self)
+        if limits.REJECT_DELAY <= 0 or cls._sleeping >= limits.TARPIT_MAX:
+            return
+        cls._sleeping += 1
+        try:
+            await asyncio.sleep(limits.REJECT_DELAY)
+        finally:
+            cls._sleeping -= 1
+
+    @staticmethod
+    def _metered(receive: Receive, project: UUID) -> Receive:
+        async def wrapped() -> Message:
+            message = await receive()
+            if message["type"] == "http.request":
+                BYTE_BUCKETS.charge(project, len(message.get("body", b"")))
+            return message
+        return wrapped
+
+
 app.add_middleware(BodyLimitMiddleware)
+app.add_middleware(RateLimitMiddleware)   # outside BodyLimit: decides before the body is read
 app.add_middleware(AccessMiddleware)
 
 
 @app.exception_handler(ApiError)
 async def api_error_handler(_req: Request, exc: ApiError) -> JSONResponse:
-    return JSONResponse({"error": exc.code}, status_code=exc.status)
+    headers = {"Retry-After": "1"} if exc.status in (429, 503) else None
+    return JSONResponse({"error": exc.code}, status_code=exc.status, headers=headers)
 
 
 @app.exception_handler(RequestValidationError)
@@ -195,6 +300,8 @@ def parse_id(raw: str) -> UUID:
 
 
 AuthDep = Annotated[Auth, Depends(require_project)]
+# Only for endpoints that re-check the key inside their write transaction.
+WriteAuthDep = Annotated[Auth, Depends(require_project_for_write)]
 
 
 # --- admin / keys ----------------------------------------------------------------
@@ -220,6 +327,16 @@ async def create_project(body: ProjectIn) -> dict[str, str]:
 @app.get("/api/admin/stats", dependencies=[Depends(require_admin)])
 async def stats() -> dict[str, int]:
     return STATS.snapshot()
+
+
+@app.get("/api/admin/timings", dependencies=[Depends(require_admin)])
+async def timings(reset: bool = False) -> dict[str, object]:
+    """This worker's phase timings (call repeatedly to reach every worker; `pid` tells them apart)."""
+    snap = TIMERS.snapshot()
+    if reset:
+        TIMERS.reset()
+        return {"pid": snap["pid"], "reset": True}
+    return snap
 
 
 @app.post("/api/keys/rotate")
@@ -265,7 +382,7 @@ RUN_COLS = "id, name, last_seq, conflicts, created_at"
 
 
 @app.post("/api/runs", status_code=201)
-async def create_run(body: RunIn, auth: AuthDep) -> dict[str, object]:
+async def create_run(body: RunIn, auth: WriteAuthDep) -> dict[str, object]:
     async with db.project_tx(auth.project_id) as conn:
         await recheck_key_in_tx(conn, auth.key_id)
         row = await conn.fetchrow(
@@ -338,91 +455,61 @@ class BatchIn(BaseModel):
 
 
 @app.post("/api/runs/{run_id}/metrics")
-async def ingest(run_id: str, body: BatchIn, auth: AuthDep) -> dict[str, int]:
+async def ingest(run_id: str, body: BatchIn, auth: WriteAuthDep) -> dict[str, int]:
     rid = parse_id(run_id)
-    async with write_slot(auth.project_id, rid), db.project_tx(auth.project_id) as conn:
-        # Row lock serializes all writers of this run: seqs are assigned and
-        # committed strictly in order, so readers never see a hole that fills later.
-        last_seq = await conn.fetchval(
-            "SELECT last_seq FROM runs WHERE id = $1 AND project_id = $2 FOR UPDATE",
-            rid, auth.project_id,
-        )
-        if last_seq is None:
-            raise NOT_FOUND
-        await recheck_key_in_tx(conn, auth.key_id)
-
-        existing = await conn.fetch(
-            """SELECT m.metric_key, m.step, m.value
-                 FROM metrics m
-                 JOIN unnest($2::text[], $3::bigint[]) AS u(k, s)
-                   ON m.metric_key = u.k AND m.step = u.s
-                WHERE m.run_id = $1""",
-            rid, [e.key for e in body.events], [e.step for e in body.events],
-        )
-        seen: dict[tuple[str, int], float] = {(r["metric_key"], r["step"]): r["value"] for r in existing}
-        new: list[Event] = []
-        rejected: list[Event] = []
-        duplicates = 0
-        for e in body.events:
-            k = (e.key, e.step)
-            if k in seen:
-                if seen[k] == e.value:
-                    duplicates += 1
-                else:
-                    rejected.append(e)
-            else:
-                seen[k] = e.value
-                new.append(e)
-        conflicts = len(rejected)          # in this request (what the client sent)
-        new_conflicts = 0                  # distinct rejected values never seen before
-        if rejected:
-            inserted = await conn.fetch(
-                """INSERT INTO metric_conflicts (run_id, project_id, metric_key, step, value, batch_id)
-                   SELECT $1, $2, u.k, u.s, u.v, $3
-                     FROM unnest($4::text[], $5::bigint[], $6::float8[]) AS u(k, s, v)
-                   ON CONFLICT DO NOTHING RETURNING 1""",
-                rid, auth.project_id, body.batch_id,
-                [e.key for e in rejected], [e.step for e in rejected], [e.value for e in rejected],
+    t0 = time.perf_counter()
+    async with write_slot(auth.project_id, rid):
+        t1 = time.perf_counter()
+        TIMERS.add("ingest_run_queue", (t1 - t0) * 1000)
+        # One round trip (db/init.sql: ingest_batch). Round 2 used 6-7 statements per batch while
+        # holding a pooled connection and the run's row lock; the function runs the same steps
+        # (row lock -> key re-check -> classify -> insert -> bump last_seq) as one autocommitted
+        # statement. Each statement inside a plpgsql function takes a fresh snapshot, so the reads
+        # after the row lock see everything the previous writer of this run committed.
+        async with db.acquire(auth.project_id) as conn:
+            t2 = time.perf_counter()
+            r = await conn.fetchrow(
+                """SELECT * FROM ingest_batch($1, $2, $3, $4,
+                       $5::text[], $6::bigint[], $7::float8[], $8::timestamptz[])""",
+                rid, auth.project_id, auth.key_id, body.batch_id,
+                [e.key for e in body.events], [e.step for e in body.events],
+                [e.value for e in body.events], [e.ts for e in body.events],
             )
-            new_conflicts = len(inserted)
-
-        if new:
-            await conn.execute(
-                """INSERT INTO metrics (run_id, seq, project_id, metric_key, step, value, client_ts, batch_id)
-                   SELECT $1, $2 + u.ord, $3, u.k, u.s, u.v, u.t, $4
-                     FROM unnest($5::text[], $6::bigint[], $7::float8[], $8::timestamptz[])
-                          WITH ORDINALITY AS u(k, s, v, t, ord)""",
-                rid, last_seq, auth.project_id, body.batch_id,
-                [e.key for e in new], [e.step for e in new],
-                [e.value for e in new], [e.ts for e in new],
-            )
-            last_seq += len(new)
-        if new or new_conflicts:
-            await conn.execute(
-                "UPDATE runs SET last_seq = $2, conflicts = conflicts + $3 WHERE id = $1",
-                rid, last_seq, new_conflicts,
-            )
+            TIMERS.add("ingest_fn", (time.perf_counter() - t2) * 1000)
+    if r["o_status"] == "not_found":
+        raise NOT_FOUND
+    if r["o_status"] == "revoked":
+        KEYS.revoked(auth.key_id)
+        STATS.inc("writes_rejected_revoked_in_flight")
+        raise UNAUTHORIZED
+    accepted, duplicates = r["o_accepted"], r["o_duplicates"]
+    conflicts, new_conflicts, last_seq = r["o_conflicts"], r["o_new_conflicts"], r["o_last_seq"]
+    new = accepted
 
     if new or new_conflicts:
+        # Hand the committed rows to the live tails (hub.publish). Seqs: the accepted events,
+        # in input order, got last_seq-accepted+1 .. last_seq. A new conflict changes the run's
+        # counter, which only the DB has: send "read the DB" instead of rows.
+        rows = None
+        if not new_conflicts and r["o_new_ords"]:
+            base, now = last_seq - accepted, time.time()
+            rows = [Row(base + i + 1, body.events[o - 1].key, body.events[o - 1].step,
+                        body.events[o - 1].value, now) for i, o in enumerate(r["o_new_ords"])]
         # NOTIFY after commit, in its own statement. First version notified inside the ingest
         # transaction: Postgres holds a global notify-queue lock from PreCommit until the commit
         # record is fsynced, so every ingest committed one at a time (load test: 19 sessions in
         # wait_event "Lock/object", ~300 events/s). Losing this hint (crash right here) costs at
         # most POLL_INTERVAL of latency, never data: streams read from the DB.
-        HUB.wake(rid)
-        try:
-            await db.execute("SELECT pg_notify('run_events', $1)", f"{rid}:{last_seq}")
-        except Exception:
-            STATS.inc("notify_errors")
-            log.exception("notify failed run=%s", rid)
+        HUB.publish(rid, rows, last_seq)   # NOTIFY goes out off the request path, batched
+    TIMERS.add("ingest_handler", (time.perf_counter() - t0) * 1000)
 
     STATS.inc("ingest_batches")
-    STATS.inc("events_accepted", len(new))
+    STATS.inc("events_accepted", accepted)
     STATS.inc("events_duplicate", duplicates)
     STATS.inc("events_conflict", conflicts)
     if conflicts:
         log.warning("conflicting events run=%s batch=%s n=%d", rid, body.batch_id, conflicts)
-    return {"accepted": len(new), "duplicates": duplicates, "conflicts": conflicts, "last_seq": last_seq}
+    return {"accepted": accepted, "duplicates": duplicates, "conflicts": conflicts, "last_seq": last_seq}
 
 
 def event_json(r: object) -> dict[str, object]:
@@ -522,7 +609,7 @@ async def stream(
                 behind = cursor < tail.first_seq - 1
                 if behind:
                     # Older than the shared in-memory window: page through the DB ourselves.
-                    async with read_slot(auth.project_id), db.project_tx(auth.project_id) as conn:
+                    async with db.project_tx(auth.project_id) as conn:
                         recs = await conn.fetch(
                             """SELECT seq, metric_key, step, value FROM metrics
                                 WHERE run_id = $1 AND project_id = $2 AND seq > $3 ORDER BY seq LIMIT $4""",
@@ -533,7 +620,11 @@ async def stream(
                 else:
                     rows = tail.after(cursor, STREAM_PAGE)
                 if rows:
+                    if rows[0].received:   # oldest row of the batch waited longest
+                        TIMERS.add("txn_start_to_sse", (time.time() - rows[0].received) * 1000)
+                    ty = time.perf_counter()
                     yield "".join(sse("metric", row_json(r), r.seq) for r in rows)
+                    TIMERS.add("sse_send", (time.perf_counter() - ty) * 1000)
                     cursor = rows[-1].seq
                     STATS.inc("stream_events_sent", len(rows))
                     last_write = time.monotonic()
@@ -551,7 +642,7 @@ async def stream(
                 now = time.monotonic()
                 if now - last_key_check >= KEY_RECHECK:
                     last_key_check = now
-                    if not await key_is_active(auth.key_id):
+                    if not await key_is_active(auth.key_id, auth.project_id):
                         STATS.inc("streams_closed_revoked")
                         yield sse("revoked", {})
                         return
