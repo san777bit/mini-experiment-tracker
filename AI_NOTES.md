@@ -38,4 +38,12 @@ in `results/`, not from the assistant's description.
   claimed the note was ~3 pages before measuring; measured, it was 2.
 
 ## What I verified or redid myself
-- TODO (fill in before sending): which files I read line by line, what I reran by hand, what I changed.
+- **Read closely:** the frontend (`api/app/static/`: the runs list, the live run page, the SSE client and its
+  seq/gap handling) and the overall architecture (ingest path, per-run seq, hub/NOTIFY fan-out, RLS), against
+  DESIGN.md and CHANGES.md. I did not read the load scripts or every test line by line.
+- **Ran by hand:** `docker compose up` from scratch, created a project and runs in the browser, drove a run with
+  `scripts/demo_producer.py --chaos --lose-every` and watched the page (conflicts, "reported, not stored" tile),
+  rotated the key with a page open, and cut the network in DevTools to watch the reconnect and catch-up.
+- **Found myself:** the "New run" form was visible before any key was entered (a `display:flex` rule overrode
+  `hidden`); reported it, the fix is the `[hidden]` rule in `style.css`. I also directed the scope of rounds 3-5
+  and the UI redesign, and rejected results I did not find convincing (e.g. latency after round 3).
