@@ -88,7 +88,7 @@ MUTATIONS = [
     Mutation(
         "M5 no push, no NOTIFY, no local wake-up at all",
         "green: slower, but pushes/NOTIFY are only hints and the 2 s poll still delivers everything",
-        [("        HUB.publish(rid, rows, last_seq)", "        pass  # MUTATION")],
+        [("        HUB.publish(rid, auth.project_id, rows, last_seq)", "        pass  # MUTATION")],
         ["tests/test_silent_failures.py::test_events_lost_on_reconnect_with_concurrent_writers",
          "tests/test_silent_failures.py::test_lost_notify_does_not_lose_events"],
     ),
@@ -121,6 +121,26 @@ MUTATIONS = [
           "            pass  # MUTATION\n")],
         ["tests/test_silent_failures.py::test_events_lost_on_reconnect_with_concurrent_writers",
          "tests/test_round4.py::test_push_with_a_hole_is_refused_and_falls_back_to_the_db"],
+    ),
+    Mutation(
+        "M10 project check removed from pushed rows",
+        "red: rows claiming another project reach the tail (no RLS on the push path)",
+        [(APP / "hub.py", "        if project_id != self.project_id:\n", "        if False:  # MUTATION\n")],
+        ["tests/test_round4.py::test_pushed_rows_claiming_another_project_never_reach_the_tail"],
+    ),
+    Mutation(
+        "M11 revocation NOTIFY ignored by other processes",
+        "red: a stream opened with a rotated key keeps streaming in other processes",
+        [(APP / "hub.py", "                self.key_revoked(UUID(msg[\"k\"]))", "                pass  # MUTATION")],
+        ["tests/test_round4.py::test_revocation_from_another_process_closes_streams_and_drops_cached_auth"],
+    ),
+    Mutation(
+        "M12 server ignores client_points",
+        "red: points that never arrived are invisible again",
+        [],
+        ["tests/test_round4.py::test_points_the_server_never_received_are_visible_and_alertable"],
+        fn_edits=[("client_points = greatest(runs.client_points, p_client_points)",
+                   "client_points = runs.client_points")],
     ),
 ]
 

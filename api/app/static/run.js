@@ -9,6 +9,7 @@ const state = {
   reconnects: 0,
   gaps: 0,
   dups: 0,
+  unconfirmed: null,     // client_points - stored, from GET /api/runs/{id} (null: client does not report)
   conn: 'connecting',
   points: new Map(),     // key -> Map(step -> value)
 };
@@ -20,6 +21,7 @@ window.__runState = () => ({
   reconnects: state.reconnects,
   gaps: state.gaps,
   dups: state.dups,
+  unconfirmed: state.unconfirmed,
   conn: state.conn,
   points: [...state.points].flatMap(([k, m]) => [...m].map(([s, v]) => [k, s, v])),
 });
@@ -137,6 +139,7 @@ function render() {
   setText('reconnects', state.reconnects);
   setText('gaps', state.gaps).classList.toggle('bad', state.gaps > 0);
   setText('dups', state.dups);
+  setText('unconfirmed', state.unconfirmed ?? '-').classList.toggle('bad', state.unconfirmed > 0);
 
   const keys = [...state.points.keys()].sort();
   const rows = [];
@@ -187,12 +190,22 @@ function chart(k, steps, m) {
   return box;
 }
 
+// Loss check the stream cannot do: has the producer generated points that never reached the server?
+async function pollRun() {
+  try {
+    const res = await api('/api/runs/' + runId);
+    if (res.ok) {
+      const r = await res.json();
+      document.getElementById('title').textContent = r.name;
+      document.title = r.name;
+      state.unconfirmed = r.unconfirmed;
+      schedule();
+    }
+  } catch (e) { /* the stream shows connection state; retry on the next tick */ }
+}
+
 (async () => {
-  const res = await api('/api/runs/' + runId);
-  if (res.ok) {
-    const r = await res.json();
-    document.getElementById('title').textContent = r.name;
-    document.title = r.name;
-  }
+  await pollRun();
+  setInterval(() => { if (!stopped) pollRun(); }, 10000);
   run();
 })();

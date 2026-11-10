@@ -33,5 +33,9 @@ in `results/`, not from the assistant's description.
   generator hid it (latency printed, errors not). One of its timers measured the wrong row of a batch. Three of its
   optimizations (commit_delay, pool split, access log off) did nothing measurable and were reverted.
 
+- **Round 5.** Asked to check the work against the task, it found its own round-4 change had removed the second
+  isolation wall from the live path without saying so, and that the design had never fit on one page. It also
+  claimed the note was ~3 pages before measuring; measured, it was 2.
+
 ## What I verified or redid myself
 - TODO (fill in before sending): which files I read line by line, what I reran by hand, what I changed.

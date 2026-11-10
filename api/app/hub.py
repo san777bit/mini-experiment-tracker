@@ -11,12 +11,14 @@ from uuid import UUID
 import asyncpg
 
 from . import db
+from .auth import KEYS
 from .db import DATABASE_URL
 from .stats import STATS, TIMERS
 
 log = logging.getLogger("hub")
 
 CHANNEL = "run_events"
+KEY_CHANNEL = "key_events"
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "2.0"))
 TAIL_MAX = int(os.environ.get("TAIL_MAX", "5000"))
 FETCH_PAGE = int(os.environ.get("STREAM_PAGE", "500")) * 10
@@ -88,8 +90,18 @@ class RunTail:
             del self.rows[: len(self.rows) - TAIL_MAX]
         return True
 
-    def push(self, rows: list[Row] | None, last_seq: int) -> None:
-        """Rows committed by some process (None = 'something changed, read the DB')."""
+    def push(self, project_id: UUID, rows: list[Row] | None, last_seq: int) -> None:
+        """Rows committed by some process (None = 'something changed, read the DB').
+
+        Pushed rows skip the DB read, and with it RLS (the second wall). So the tail checks the
+        project itself: rows that claim a different project than this tail's are dropped and
+        counted; that can only be a routing bug, and it must not reach a viewer.
+        """
+        if project_id != self.project_id:
+            STATS.inc("tail_push_foreign_project")
+            log.error("pushed rows for run=%s claim project=%s, tail belongs to another project",
+                      self.run_id, project_id)
+            return
         if rows is None:
             self.wake.set()
             return
@@ -161,8 +173,50 @@ class Hub:
         self._tails: dict[UUID, list] = {}      # run_id -> [RunTail, users]
         self._conn: asyncpg.Connection | None = None
         self._task: asyncio.Task[None] | None = None
-        self._pending: dict[UUID, list] = {}    # run_id -> [last_seq, rows | None]
+        self._pending: dict[UUID, list] = {}    # run_id -> [last_seq, rows | None, project_id]
         self._notifier: asyncio.Task[None] | None = None
+        self._key_watch: dict[UUID, list[tuple[asyncio.Event, RunTail]]] = {}
+
+    # --- key revocation -------------------------------------------------------------------
+
+    def watch_key(self, key_id: UUID, tail: RunTail) -> asyncio.Event:
+        """Event set when key_id is revoked. Before: an open stream noticed only at its next
+        5 s DB re-check (test measured 5.5 s of streaming with a revoked key)."""
+        ev = asyncio.Event()
+        self._key_watch.setdefault(key_id, []).append((ev, tail))
+        return ev
+
+    def unwatch_key(self, key_id: UUID, ev: asyncio.Event) -> None:
+        lst = self._key_watch.get(key_id)
+        if lst is None:
+            return
+        lst[:] = [x for x in lst if x[0] is not ev]
+        if not lst:
+            del self._key_watch[key_id]
+
+    def key_revoked(self, key_id: UUID, announce: bool = False) -> None:
+        KEYS.revoked(key_id)                          # drop cached write auth for it
+        for ev, tail in self._key_watch.get(key_id, []):
+            ev.set()
+            tail._publish()                           # wake the stream; it sees the event first
+        if announce:
+            asyncio.get_running_loop().create_task(self._announce_revoked(key_id))
+
+    async def _announce_revoked(self, key_id: UUID) -> None:
+        try:
+            await db.execute("SELECT pg_notify($1, $2)", KEY_CHANNEL,
+                             json.dumps({"p": PID, "k": str(key_id)}), lane=db.HUB)
+        except Exception:
+            STATS.inc("notify_errors")      # streams still close at their periodic re-check
+            log.exception("revocation notify failed")
+
+    def _on_key_notify(self, _conn: object, _pid: int, _channel: str, payload: str) -> None:
+        try:
+            msg = json.loads(payload)
+            if msg["p"] != PID:
+                self.key_revoked(UUID(msg["k"]))
+        except (ValueError, KeyError, TypeError):
+            STATS.inc("notify_bad_payload")
 
     async def acquire(self, run_id: UUID, project_id: UUID, start_seq: int) -> RunTail:
         entry = self._tails.get(run_id)
@@ -194,7 +248,7 @@ class Hub:
         for tail, _ in self._tails.values():
             tail.wake.set()
 
-    def publish(self, run_id: UUID, rows: list[Row] | None, last_seq: int) -> None:
+    def publish(self, run_id: UUID, project_id: UUID, rows: list[Row] | None, last_seq: int) -> None:
         """Called right after an ingest commit. rows=None: changed, but read it from the DB.
 
         Round 4: tails read every new row from the DB (one pooled round trip per tail per
@@ -206,10 +260,10 @@ class Hub:
             rows = None
         entry = self._tails.get(run_id)
         if entry is not None:
-            entry[0].push(rows, last_seq)
+            entry[0].push(project_id, rows, last_seq)
         p = self._pending.get(run_id)
         if p is None:
-            self._pending[run_id] = [last_seq, list(rows) if rows is not None else None]
+            self._pending[run_id] = [last_seq, list(rows) if rows is not None else None, project_id]
         else:
             p[0] = max(p[0], last_seq)
             p[1] = p[1] + rows if (p[1] is not None and rows is not None) else None
@@ -217,8 +271,8 @@ class Hub:
             self._notifier = asyncio.create_task(self._flush_notifies())
 
     @staticmethod
-    def _item(run_id: UUID, last_seq: int, rows: list[Row] | None) -> str:
-        item = {"r": str(run_id), "s": last_seq,
+    def _item(run_id: UUID, project_id: UUID, last_seq: int, rows: list[Row] | None) -> str:
+        item = {"r": str(run_id), "j": str(project_id), "s": last_seq,
                 "rows": [[r.seq, r.key, r.step, r.value, r.received] for r in rows] if rows is not None else None}
         text = json.dumps(item, separators=(",", ":"), ensure_ascii=False)
         if len(text.encode()) > PAYLOAD_MAX - 100:          # too big to carry: hint only
@@ -232,7 +286,7 @@ class Hub:
         go out together. Losing one (crash before it is sent) costs at most POLL_INTERVAL."""
         while self._pending:
             batch, self._pending = self._pending, {}
-            items = [self._item(rid, p[0], p[1]) for rid, p in batch.items()]
+            items = [self._item(rid, p[2], p[0], p[1]) for rid, p in batch.items()]
             STATS.inc("notify_batches")
             chunk: list[str] = []
             size = 0
@@ -260,7 +314,7 @@ class Hub:
                 if entry is None:
                     continue
                 rows = None if it["rows"] is None else [Row(*r) for r in it["rows"]]
-                entry[0].push(rows, it["s"])
+                entry[0].push(UUID(it["j"]), rows, it["s"])
         except (ValueError, KeyError, TypeError):
             STATS.inc("notify_bad_payload")
             self._wake_all()                 # unknown content: read everything from the DB
@@ -284,6 +338,7 @@ class Hub:
                     self._conn = await asyncpg.connect(
                         DATABASE_URL, timeout=5, server_settings={"application_name": "tracker-listener"})
                     await self._conn.add_listener(CHANNEL, self._on_notify)
+                    await self._conn.add_listener(KEY_CHANNEL, self._on_key_notify)
                     STATS.inc("listener_connects")
                     # Anything notified while we were down is unknown: wake everyone.
                     self._wake_all()

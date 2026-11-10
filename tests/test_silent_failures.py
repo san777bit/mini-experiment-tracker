@@ -204,7 +204,8 @@ async def test_old_key_stops_working_after_rotation():
         closed_at = await asyncio.wait_for(watcher, timeout=20)
     print(f"[rotate] stream opened with old key closed {closed_at - rotated_at:.1f}s after rotation; events={stream_events}")
     assert "revoked" in stream_events
-    assert closed_at - rotated_at < 5.0 + 2.0 + 1.0   # KEY_RECHECK + POLL_INTERVAL + slack
+    # Round 5: rotation announces the revocation; was KEY_RECHECK + POLL_INTERVAL (5.5 s measured).
+    assert closed_at - rotated_at < 1.0
 
 
 async def test_lost_notify_does_not_lose_events():

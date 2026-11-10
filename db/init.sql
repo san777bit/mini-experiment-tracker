@@ -24,6 +24,10 @@ CREATE TABLE runs (
     name        text NOT NULL,
     last_seq    bigint NOT NULL DEFAULT 0,  -- per-run gapless counter, bumped under row lock
     conflicts   bigint NOT NULL DEFAULT 0,  -- events rejected: same key/step, different value
+    -- Loss detection: distinct points the producer says it has generated (optional, from batches),
+    -- and when that number last grew. client_points > last_seq for long = events that never arrived.
+    client_points    bigint,
+    client_points_at timestamptz,
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX runs_project_idx ON runs (project_id, created_at DESC);
@@ -85,6 +89,7 @@ GRANT SELECT, INSERT ON metric_conflicts TO app;
 CREATE FUNCTION ingest_batch(
     p_run uuid, p_project uuid, p_key uuid, p_batch uuid,
     p_keys text[], p_steps bigint[], p_values float8[], p_ts timestamptz[],
+    p_client_points bigint,
     OUT o_status text, OUT o_accepted int, OUT o_duplicates int, OUT o_conflicts int,
     OUT o_new_conflicts int, OUT o_last_seq bigint,
     OUT o_new_ords int[])           -- 1-based positions of the accepted events, in seq order
@@ -135,8 +140,11 @@ BEGIN
       INTO o_accepted, o_duplicates, o_conflicts, o_new_conflicts, o_new_ords;
 
     o_last_seq := v_last + o_accepted;
-    IF o_accepted > 0 OR o_new_conflicts > 0 THEN
-        UPDATE runs SET last_seq = o_last_seq, conflicts = runs.conflicts + o_new_conflicts
+    IF o_accepted > 0 OR o_new_conflicts > 0 OR p_client_points IS NOT NULL THEN
+        UPDATE runs SET last_seq = o_last_seq, conflicts = runs.conflicts + o_new_conflicts,
+               client_points_at = CASE WHEN p_client_points > coalesce(runs.client_points, -1)
+                                       THEN now() ELSE runs.client_points_at END,
+               client_points = greatest(runs.client_points, p_client_points)
          WHERE id = p_run;
     END IF;
     o_status := 'ok';
@@ -168,3 +176,18 @@ END
 $$;
 REVOKE ALL ON FUNCTION tail_fetch FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION tail_fetch TO app;
+
+-- Admin view for alerting: runs whose producer reported more points than are stored, and has not
+-- reported progress for p_quiet. Crosses projects on purpose (operator view), so it runs as the
+-- owner (SECURITY DEFINER bypasses RLS) and returns ids and counts only, no metric data.
+CREATE FUNCTION runs_missing_points(p_quiet interval)
+RETURNS TABLE (run_id uuid, project_id uuid, stored bigint, reported bigint, quiet_since timestamptz)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+    SELECT id, project_id, last_seq, client_points, client_points_at
+      FROM runs
+     WHERE client_points > last_seq AND client_points_at < now() - p_quiet
+     ORDER BY client_points_at
+     LIMIT 1000
+$$;
+REVOKE ALL ON FUNCTION runs_missing_points FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION runs_missing_points TO app;

@@ -1,85 +1,41 @@
 # Design (written before code)
 
-## Model
-`projects` 1-n `api_keys` (sha256 of key, `revoked_at`), `projects` 1-n `runs` (`last_seq` counter),
-`runs` 1-n `metrics(run_id, seq, project_id, metric_key, step, value, client_ts, batch_id)`
-with `PK(run_id, seq)` and `UNIQUE(run_id, metric_key, step)`.
+The design as decided before coding, tightened to one page (original wording: commit 82f48bc). Changes forced
+later by tests and measurements: [CHANGES.md](CHANGES.md).
 
-## Event format and ordering
-Client sends `POST /api/runs/{id}/metrics` with
-`{"batch_id": uuid, "events": [{"key": "loss", "step": 12, "value": 0.31, "ts": "..."}]}` (max 1000 events, finite values).
-The identity of a point is `(run, key, step)`. The UI orders points by `step`, never by arrival time.
-For streaming, the server gives every *accepted* point a per-run `seq` (1, 2, 3, ... no gaps).
+## Model and event format
+`projects` 1-n `api_keys` (sha256, `revoked_at`); `projects` 1-n `runs` (`last_seq`); `runs` 1-n
+`metrics(run_id, seq, project_id, metric_key, step, value, client_ts, batch_id)`, `PK(run_id, seq)`,
+`UNIQUE(run_id, metric_key, step)`. `POST /api/runs/{id}/metrics` takes
+`{"batch_id": uuid, "events": [{"key": "loss", "step": 12, "value": 0.31, "ts": "..."}]}` (≤1000, finite values).
 
-`seq` is NOT a global `BIGSERIAL`: sequence values commit out of order, so a reader that saw seq 11
-can later miss seq 10 committed after it. Instead the batch transaction takes `SELECT ... FOR UPDATE`
-on the run row, reads `last_seq`, inserts, bumps `last_seq`. Writes to one run are serialized,
-so committed seqs of a run are always a contiguous prefix. Cost: one row lock per batch per run.
+## Ordering
+A point is `(run, key, step)`; the UI orders by `step`, never by arrival. For streaming, every *accepted* point
+gets a per-run `seq` (1, 2, 3, no gaps). Not a global `BIGSERIAL`: sequence values commit out of order, so a reader
+that saw 11 could later miss 10. The batch transaction locks the run row (`FOR UPDATE`), reads `last_seq`, inserts,
+bumps it: committed seqs of a run are always a contiguous prefix. Cost: one row lock per batch per run.
 
 ## Same batch sent again
-The whole batch is one transaction: all of it is stored or none of it. Under the run lock each event is
-classified against what is stored: **new** (insert), **duplicate** (same key/step/value, ignored),
-**conflict** (same key/step, different value: first write wins, counted, returned, logged).
-Response: `{accepted, duplicates, conflicts, last_seq}`. A retried batch returns `accepted=0`.
-A client that lost the response cannot tell committed from not committed, so it must retry the same
-events; idempotency makes that safe. `batch_id` is stored for audit only.
+One transaction per batch: all or nothing. Under the run lock each event is **new** (insert), **duplicate** (same
+key/step/value, ignored) or **conflict** (same key/step, other value: first write wins, counted, returned, logged).
+Response `{accepted, duplicates, conflicts, last_seq}`; a retry returns `accepted=0`. A client that lost the response
+cannot know whether it committed, so it resends the same events; idempotency makes that safe.
 
-## Live updates and catch-up
-SSE `GET /api/runs/{id}/stream`, each message `id: <seq>`. The browser client uses `fetch` streaming
-(so the API key goes in the `Authorization` header, never in a URL) and reconnects with
-`Last-Event-ID: <last seq it applied>`. The server streams from the DB: `seq > cursor ORDER BY seq`.
-There is no per-client in-memory event queue: the cursor is the queue and the DB is the buffer.
-A slow client just lags (TCP backpressure blocks the generator); it cannot overflow or drop.
-Wake-up: after commit, Postgres `NOTIFY run_events` (payload `run_id:seq`) is a *hint*.
-*(Changed after measurement: originally NOTIFY ran inside the ingest transaction; Postgres holds a global
-notify lock until the commit is flushed, which serialized all ingests. It now runs right after commit.)* Every stream
-also polls every 2 s, so a lost NOTIFY (listener reconnect) costs latency, not data.
-Client checks `seq == last+1`; a gap or duplicate is counted and shown on the page, gap forces reconnect.
-First page load = stream from `seq 0`, so there is one code path for snapshot and catch-up.
+## Live updates and catch-up after a disconnect
+SSE `GET /api/runs/{id}/stream`, each message `id: <seq>`. The page streams with `fetch` (key in the
+`Authorization` header, never in a URL) and reconnects with `Last-Event-ID: <last applied seq>`; the server sends
+`seq > cursor ORDER BY seq` from the DB. No per-client queue: the cursor is the queue, the DB is the buffer, so a slow
+client lags (TCP backpressure) but cannot overflow. After commit a Postgres `NOTIFY` wakes streams; it is a hint
+(*changed after measurement: first inside the transaction, where it serialized all commits; now after commit*), and
+streams also poll every 2 s, so a lost NOTIFY costs latency, not data. The page applies only `seq == last+1`, counts
+repeats and gaps, and reconnects on a gap. First load streams from 0: one code path for snapshot and catch-up.
 
 ## Project isolation
-- Key -> project. Every query has `project_id = $auth` and Postgres RLS on `runs`/`metrics`
-  (`SET LOCAL app.project_id`) as a second wall; the app connects as a non-owner role.
-- Foreign run and non-existent run return the same `404 {"error":"not_found"}` from the same query
-  (no timing or message difference). IDs are UUIDv4. Malformed IDs are also 404.
-- SSE uses the same auth dependency; open streams re-check the key every 5 s and close if revoked.
-- No response cache; API sets `Cache-Control: no-store`. Logs never contain keys or request bodies.
-- Rotation `POST /api/keys/rotate` issues a new key and revokes the calling key immediately (no grace period).
-
-## Changed in round 2 (after attacks, see STRESS.md)
-- Streams share one in-memory tail (last 5000 rows) per run per process; a viewer behind it reads the DB.
-- Writers of one run queue in memory before taking a DB connection; a project gets at most 12 of 20 connections per
-  process; queue > 64 → 429, wait > 5 s → 503.
-- Writes re-check the key inside the transaction (`FOR SHARE`); rotation revokes first and only if still active.
-- Every DB call is bounded (3 s command timeout, bounded acquire/release); DB trouble → 503 + Retry-After.
-- Bodies over 2 MB → 413 before parsing; metric keys normalized to NFC; cursors limited to bigint.
-- Rejected conflicting values are stored once each in `metric_conflicts`; `runs.conflicts` counts distinct values.
-
-## Changed in round 3 (fairness and cheap rejections, see STRESS.md)
-- The hard per-project cap (12 of 20) is gone. Every pooled connection goes through a work-conserving, max-min
-  fair gate: a lone project can use all 20; when tenants wait, a released connection goes to the waiting tenant
-  holding the fewest. Writers of one run still queue in memory first (one per run per process reaches the DB).
-- Rejections happen before the body is read and without the DB, from the `Authorization` header alone: a key the DB
-  already rejected (cached; unknown and revoked keys never become valid) → 401; a project over its token-bucket
-  budget (300 req/s, burst 600, per process) → 429; a write to a run whose queue is full → 429 (only for the
-  owning project, so a foreign run id still looks missing). The key→project cache is used only to charge budgets,
-  never to grant access: the DB check and the in-transaction key re-check are unchanged.
-- Ingest is one statement: plpgsql `ingest_batch` (row lock, key re-check, classify, insert, bump `last_seq`).
-  Statements inside a VOLATILE plpgsql function take fresh snapshots, so reads after the lock see the previous
-  writer's commit; a single CTE statement would not (its snapshot predates the lock wait).
-
-## Changed in round 4 (latency, see PERF.md)
-- Live rows are pushed, not re-read: after commit the ingesting process gives the new rows to its own tail and puts them
-  in the NOTIFY payload for the others (hint only if they do not fit or a conflict changed the counter). A tail appends
-  only `seq == last_seq + 1`; a hole (e.g. two processes' NOTIFYs out of order) falls back to a DB read, and tails still
-  poll every 2 s. The DB stays the source of truth; the page's contiguity check is unchanged.
-- NOTIFY is sent off the request path by one background sender per process, batched while one is in flight.
-- Ingest and run creation skip the separate key lookup for a key this process verified recently; their transaction
-  re-checks the key `FOR SHARE` anyway (a stale cache entry ends in 401 there and is dropped). Reads always hit the DB.
-- Tail reads are one SQL function (`tail_fetch`); tails and NOTIFY use their own small pool lane.
-- No reset query on connection release (pool connections hold no session state); whole pool opened at boot.
-- Per-process request budget raised to 1000/s (300/s throttled a legitimate single-project load on its busiest worker).
+Key → project. Every query filters `project_id = $auth`, and RLS on `runs`/`metrics` (`app.project_id` set per
+transaction, non-owner role) is a second wall. Foreign, missing and malformed IDs return the same 404 from the same
+query; IDs are UUIDv4. SSE uses the same auth; open streams re-check the key every 5 s. `Cache-Control: no-store`, no
+response cache; logs never contain keys or bodies. Rotation issues a new key and revokes the caller's at once.
 
 ## Known weak spots (to attack in tests)
-Per-run lock throughput; single API process holds the stream hub; full replay on first load grows with run size;
+Per-run lock throughput; one process holds the stream hub; full replay on first load grows with the run;
 first-write-wins hides a client bug unless someone reads `conflicts`; key in browser memory.

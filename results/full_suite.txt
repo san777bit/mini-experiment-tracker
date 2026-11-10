@@ -1,13 +1,4 @@
-...................................................s                     [100%]
-============================= slowest 8 durations =============================
-108.94s call     tests/test_stress_heavy.py::test_long_run_page_open_and_stay_live
-56.16s call     tests/test_consistency_e2e.py::test_client_offline_30s_catches_up
-49.58s call     tests/test_ingest_property.py::test_any_order_any_repetition_same_state
-43.65s call     tests/test_stress_heavy.py::test_postgres_restart_under_load
-16.18s call     tests/test_consistency_e2e.py::test_page_matches_db_under_chaos
-15.64s call     tests/test_silent_failures.py::test_events_lost_on_reconnect_with_concurrent_writers
-11.85s call     tests/test_isolation.py::test_timing_foreign_vs_missing
-11.25s call     tests/test_round3.py::test_requests_with_a_rejected_key_do_not_touch_the_db
+..............................................................s          [100%]
 =========================== short test summary info ===========================
 SKIPPED [1] tests\test_stress_partition.py:40: API is not routed through toxiproxy (chaos mode)
-51 passed, 1 skipped in 420.50s (0:07:00)
+62 passed, 1 skipped in 406.86s (0:06:46)

@@ -1,8 +1,8 @@
 # Mini experiment tracker
 
 Projects with API keys, metric ingestion over an unreliable network, a run list and a live run page (SSE).
-Read [NOTE.md](NOTE.md) first (results and verdict), then [DESIGN.md](DESIGN.md), [STRESS.md](STRESS.md),
-[PERF.md](PERF.md). Per-phase server timings: `GET /api/admin/timings` (admin token, per worker);
+Read [NOTE.md](NOTE.md) first (results and verdict), then [DESIGN.md](DESIGN.md) (before code),
+[CHANGES.md](CHANGES.md) (after), [STRESS.md](STRESS.md), [PERF.md](PERF.md). Per-phase server timings: `GET /api/admin/timings` (admin token, per worker);
 `./load/perf_step.ps1 <name> [--jitter]` runs the 50×10 load twice with them.
 
 ## Run
@@ -25,10 +25,11 @@ curl -X POST localhost:8000/api/admin/projects -H "x-admin-token: dev-admin-toke
 | POST | /api/keys/rotate | new key, caller's key revoked immediately |
 | POST / GET | /api/runs | create / list own runs |
 | GET | /api/runs/{id} | 404 for foreign and missing alike |
-| POST | /api/runs/{id}/metrics | `{"batch_id": uuid, "events": [{"key","step","value","ts?"}]}`, ≤1000, idempotent |
+| POST | /api/runs/{id}/metrics | `{"batch_id": uuid, "events": [{"key","step","value","ts?"}], "client_points?": n}`, ≤1000, idempotent |
 | GET | /api/runs/{id}/metrics?after=&limit= | history by seq |
 | GET | /api/runs/{id}/conflicts | values rejected by first-write-wins, with the stored value |
 | GET | /api/runs/{id}/stream | SSE, `id: seq`, resume with `Last-Event-ID` |
+| GET | /api/admin/missing-points?quiet_seconds=60 | admin; runs whose producer reported more points (`client_points` in batches) than are stored |
 
 ## Tests (stack must be running)
 ```bash

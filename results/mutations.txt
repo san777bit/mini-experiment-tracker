@@ -4,37 +4,37 @@ actual:   red  -> AS EXPECTED
         run = await db_run(run_id)
         print(f"[reconnect] writers={writers} events={run['last_seq']} reader_events={len(received)}")
 >       assert run["last_seq"] == writers * per_writer * 3 == run["n"]
-E       assert 3840 == ((16 * 40) * 3)
+E       assert 5760 == ((16 * 40) * 3)
 
 tests\test_silent_failures.py:68: AssertionError
 ---------------------------- Captured stdout call -----------------------------
-[reconnect] writers=16 events=3840 reader_events=1917
+[reconnect] writers=16 events=5760 reader_events=1908
 =========================== short test summary info ===========================
 FAILED tests/test_silent_failures.py::test_events_lost_on_reconnect_with_concurrent_writers
 !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
-1 failed in 15.89s
+1 failed in 13.96s
 
 === M2 stream resumes from Last-Event-ID + 1 (off by one)
 expected: red: one event lost per reconnect; the page counts gaps
 actual:   red  -> AS EXPECTED
 E         
 E         At index 0 diff: 2 != 1
-E         Right contains 6 more items, first extra item: 1915
+E         Right contains 13 more items, first extra item: 1908
 E         Use -v to get more diff
 
 tests\test_silent_failures.py:26: AssertionError
 ---------------------------- Captured stdout call -----------------------------
-[reconnect] writers=16 events=1920 reader_events=1914
+[reconnect] writers=16 events=1920 reader_events=1907
 =========================== short test summary info ===========================
 FAILED tests/test_silent_failures.py::test_events_lost_on_reconnect_with_concurrent_writers
 !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
-1 failed in 17.58s
+1 failed in 11.82s
 
 === M3a project filter removed from GET /api/runs/{id} (RLS still on)
 expected: green: RLS is the second wall
 actual:   green  -> AS EXPECTED
 .                                                                        [100%]
-1 passed in 4.88s
+1 passed in 4.60s
 
 === M3b project filter removed AND RLS disabled on runs
 expected: red: A reads B's run
@@ -50,7 +50,7 @@ GET /api/runs/<B>: foreign=200 missing=404
 =========================== short test summary info ===========================
 FAILED tests/test_isolation.py::test_foreign_run_is_indistinguishable_from_missing
 !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
-1 failed in 4.79s
+1 failed in 3.64s
 
 === M4 rotation issues a new key but does not revoke the old one
 expected: red: old key keeps working
@@ -60,19 +60,19 @@ actual:   red  -> AS EXPECTED
     
             message = str(exc)
 >           raise mapped_exc(message) from exc
-E           httpx.ReadError
+E           httpx.RemoteProtocolError: Server disconnected without sending a response.
 
-.venv\Lib\site-packages\httpx\_transports\default.py:118: ReadError
+.venv\Lib\site-packages\httpx\_transports\default.py:118: RemoteProtocolError
 =========================== short test summary info ===========================
 FAILED tests/test_silent_failures.py::test_old_key_stops_working_after_rotation
 !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
-1 failed in 2.55s
+1 failed in 1.64s
 
 === M5 no push, no NOTIFY, no local wake-up at all
 expected: green: slower, but pushes/NOTIFY are only hints and the 2 s poll still delivers everything
 actual:   green  -> AS EXPECTED
 ..                                                                       [100%]
-2 passed in 22.80s
+2 passed in 17.58s
 
 === M6 key re-check removed from ingest_batch
 expected: red: a write authenticated before rotation commits after it
@@ -88,23 +88,23 @@ tests\test_stress_edges.py:49: AssertionError
 =========================== short test summary info ===========================
 FAILED tests/test_stress_edges.py::test_write_authenticated_before_rotation_cannot_commit_after_it
 !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
-1 failed in 4.54s
+1 failed in 3.75s
 
 === M7 rejected-key cache disabled
 expected: red: every request with a revoked key is a DB lookup again
 actual:   red  -> AS EXPECTED
 >       assert delta < 40, delta
-E       AssertionError: 362
-E       assert 362 < 40
+E       AssertionError: 369
+E       assert 369 < 40
 
 tests\test_round3.py:164: AssertionError
 ---------------------------- Captured stdout call -----------------------------
 
-[rejected-key] requests=400 db_transactions=362
+[rejected-key] requests=400 db_transactions=369
 =========================== short test summary info ===========================
 FAILED tests/test_round3.py::test_requests_with_a_rejected_key_do_not_touch_the_db
 !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
-1 failed in 13.41s
+1 failed in 10.35s
 
 === M8 fair gate degraded to FIFO
 expected: red: a quiet tenant waits behind a hot tenant's whole queue
@@ -120,7 +120,7 @@ tests\test_round3.py:50: AssertionError
 =========================== short test summary info ===========================
 FAILED tests/test_round3.py::test_gate_serves_a_quiet_tenant_before_a_hot_tenants_queue
 !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
-1 failed in 1.63s
+1 failed in 0.90s
 
 === M9 pushed rows appended without the contiguity check
 expected: red: out-of-order NOTIFYs from two processes put a hole/disorder in the live tail
@@ -132,11 +132,59 @@ E
 E         Left contains one more item: Row(seq=13, key='loss', step=13, value=1.3, received=0.0)
 E         Use -v to get more diff)
 
-tests\test_round4.py:38: AssertionError
+tests\test_round4.py:41: AssertionError
 =========================== short test summary info ===========================
 FAILED tests/test_round4.py::test_push_with_a_hole_is_refused_and_falls_back_to_the_db
 !!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
-1 failed, 1 passed in 16.78s
+1 failed, 1 passed in 11.42s
+
+=== M10 project check removed from pushed rows
+expected: red: rows claiming another project reach the tail (no RLS on the push path)
+actual:   red  -> AS EXPECTED
+        t.push(other, rows(1), 1)                    # same-process path
+>       assert t.rows == [] and t.last_seq == 0
+E       AssertionError: assert ([Row(seq=1, k...received=0.0)] == []
+E         
+E         Left contains one more item: Row(seq=1, key='loss', step=1, value=0.1, received=0.0)
+E         Use -v to get more diff)
+
+tests\test_round4.py:100: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_round4.py::test_pushed_rows_claiming_another_project_never_reach_the_tail
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 1.67s
+
+=== M11 revocation NOTIFY ignored by other processes
+expected: red: a stream opened with a rotated key keeps streaming in other processes
+actual:   red  -> AS EXPECTED
+        h._on_key_notify(None, 0, hub.KEY_CHANNEL, json.dumps({"p": hub.PID + 1, "k": str(key)}))
+>       assert ev.is_set() and changed.is_set()      # stream wakes and sees the revocation first
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       assert (False)
+E        +  where False = is_set()
+E        +    where is_set = <asyncio.locks.Event object at 0x000001C0FC620C90 [unset]>.is_set
+
+tests\test_round4.py:154: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_round4.py::test_revocation_from_another_process_closes_streams_and_drops_cached_auth
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 1.33s
+
+=== M12 server ignores client_points
+expected: red: points that never arrived are invisible again
+actual:   red  -> AS EXPECTED
+>           assert (r["last_seq"], r["client_points"], r["unconfirmed"]) == (20, 30, 10), r
+E           AssertionError: {'id': '14235e15-fdac-406a-af0c-46fc3b6a5c58', 'name': 'run', 'last_seq': 20, 'conflicts': 0, ...}
+E           assert (20, None, None) == (20, 30, 10)
+E             
+E             At index 1 diff: None != 30
+E             Use -v to get more diff
+
+tests\test_round4.py:187: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_round4.py::test_points_the_server_never_received_are_visible_and_alertable
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 2.62s
 
 === summary
 OK       red   M1 seq from a global sequence, no run row lock (BIGSERIAL-style)
@@ -149,3 +197,6 @@ OK       red   M6 key re-check removed from ingest_batch
 OK       red   M7 rejected-key cache disabled
 OK       red   M8 fair gate degraded to FIFO
 OK       red   M9 pushed rows appended without the contiguity check
+OK       red   M10 project check removed from pushed rows
+OK       red   M11 revocation NOTIFY ignored by other processes
+OK       red   M12 server ignores client_points

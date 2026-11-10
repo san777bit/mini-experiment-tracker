@@ -49,10 +49,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await db.init_pool()
     await HUB.start()
     lag = asyncio.create_task(loop_lag_monitor())
-    gate_mon = asyncio.create_task(_gate_monitor())
+    # Pool/gate sampling every 50 ms is for load diagnostics only (PERF.md); off by default.
+    gate_mon = asyncio.create_task(_gate_monitor()) if os.environ.get("DIAG") == "1" else None
     yield
     lag.cancel()
-    gate_mon.cancel()
+    if gate_mon:
+        gate_mon.cancel()
     await HUB.stop()
     await db.close_pool()
 
@@ -329,6 +331,17 @@ async def stats() -> dict[str, int]:
     return STATS.snapshot()
 
 
+@app.get("/api/admin/missing-points", dependencies=[Depends(require_admin)])
+async def missing_points(quiet_seconds: Annotated[int, Query(ge=0, le=86400)] = 60) -> dict[str, object]:
+    """Alerting hook: runs whose producer reported more points than are stored and has been quiet
+    for quiet_seconds (in-flight batches are not losses). Ids and counts only, no metric data."""
+    rows = await db.fetch("SELECT * FROM runs_missing_points(make_interval(secs => $1))", quiet_seconds)
+    return {"runs": [{"run_id": str(r["run_id"]), "project_id": str(r["project_id"]),
+                      "stored": r["stored"], "reported": r["reported"],
+                      "missing": r["reported"] - r["stored"],
+                      "quiet_since": r["quiet_since"].isoformat()} for r in rows]}
+
+
 @app.get("/api/admin/timings", dependencies=[Depends(require_admin)])
 async def timings(reset: bool = False) -> dict[str, object]:
     """This worker's phase timings (call repeatedly to reach every worker; `pid` tells them apart)."""
@@ -357,6 +370,7 @@ async def rotate_key(auth: AuthDep) -> dict[str, str]:
             uuid.uuid4(), auth.project_id, digest, prefix,
         )
     STATS.inc("key_rotations")
+    HUB.key_revoked(auth.key_id, announce=True)   # close this key's open streams in every process now
     return {"api_key": plain}
 
 
@@ -375,10 +389,14 @@ def run_json(row: object) -> dict[str, object]:
         "last_seq": r["last_seq"],
         "conflicts": r["conflicts"],
         "created_at": r["created_at"].isoformat(),
+        # Loss detection (only if the producer sends client_points): points the producer says it
+        # generated but the server has not stored. Briefly > 0 while batches are in flight.
+        "client_points": r["client_points"],
+        "unconfirmed": max(0, r["client_points"] - r["last_seq"]) if r["client_points"] is not None else None,
     }
 
 
-RUN_COLS = "id, name, last_seq, conflicts, created_at"
+RUN_COLS = "id, name, last_seq, conflicts, created_at, client_points"
 
 
 @app.post("/api/runs", status_code=201)
@@ -452,6 +470,9 @@ class Event(BaseModel):
 class BatchIn(BaseModel):
     batch_id: UUID
     events: list[Event] = Field(min_length=1, max_length=MAX_BATCH)
+    # Optional: distinct (key, step) points this producer has generated for the run so far,
+    # including this batch. Lets the server notice events that never arrived (see runs_missing_points).
+    client_points: int | None = Field(default=None, ge=0, le=2**53)
 
 
 @app.post("/api/runs/{run_id}/metrics")
@@ -470,10 +491,10 @@ async def ingest(run_id: str, body: BatchIn, auth: WriteAuthDep) -> dict[str, in
             t2 = time.perf_counter()
             r = await conn.fetchrow(
                 """SELECT * FROM ingest_batch($1, $2, $3, $4,
-                       $5::text[], $6::bigint[], $7::float8[], $8::timestamptz[])""",
+                       $5::text[], $6::bigint[], $7::float8[], $8::timestamptz[], $9::bigint)""",
                 rid, auth.project_id, auth.key_id, body.batch_id,
                 [e.key for e in body.events], [e.step for e in body.events],
-                [e.value for e in body.events], [e.ts for e in body.events],
+                [e.value for e in body.events], [e.ts for e in body.events], body.client_points,
             )
             TIMERS.add("ingest_fn", (time.perf_counter() - t2) * 1000)
     if r["o_status"] == "not_found":
@@ -500,7 +521,7 @@ async def ingest(run_id: str, body: BatchIn, auth: WriteAuthDep) -> dict[str, in
         # record is fsynced, so every ingest committed one at a time (load test: 19 sessions in
         # wait_event "Lock/object", ~300 events/s). Losing this hint (crash right here) costs at
         # most POLL_INTERVAL of latency, never data: streams read from the DB.
-        HUB.publish(rid, rows, last_seq)   # NOTIFY goes out off the request path, batched
+        HUB.publish(rid, auth.project_id, rows, last_seq)   # NOTIFY goes out off the request path, batched
     TIMERS.add("ingest_handler", (time.perf_counter() - t0) * 1000)
 
     STATS.inc("ingest_batches")
@@ -598,12 +619,18 @@ async def stream(
     async def gen() -> AsyncIterator[str]:
         nonlocal cursor
         tail = await HUB.acquire(rid, auth.project_id, start_seq)
+        revoked = HUB.watch_key(auth.key_id, tail)
         STATS.gauge("streams_open", 1)
         last_key_check = last_write = time.monotonic()
         status: tuple[int, int] | None = None
         try:
             yield sse("hello", {"after": cursor})
             while True:
+                if revoked.is_set():
+                    # Rotation announced (same or another process): close before sending more.
+                    STATS.inc("streams_closed_revoked_push")
+                    yield sse("revoked", {})
+                    return
                 # Grab the change signal BEFORE reading, so a change during the read is not missed.
                 changed = tail.changed()
                 behind = cursor < tail.first_seq - 1
@@ -640,6 +667,7 @@ async def stream(
                     STATS.inc("stream_idle_ticks")
 
                 now = time.monotonic()
+                # Fallback for a revocation announced while this process's listener was down.
                 if now - last_key_check >= KEY_RECHECK:
                     last_key_check = now
                     if not await key_is_active(auth.key_id, auth.project_id):
@@ -650,6 +678,7 @@ async def stream(
                     yield ": hb\n\n"
                     last_write = now
         finally:
+            HUB.unwatch_key(auth.key_id, revoked)
             HUB.release(rid)
             STATS.gauge("streams_open", -1)
 

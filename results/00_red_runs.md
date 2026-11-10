@@ -75,6 +75,16 @@ commits. After moving NOTIFY after commit: 499.5 events/s (results/load_50x10_4w
 - `perf_diag_sync_commit_off.txt`: diagnostic only (setting reverted): p99 unchanged, so the tail is CPU, not fsync.
 - Target e2e p99 ≤ 150 ms: not met (190-224 ms worst case).
 
+## Round 5 (review against the task; CHANGES.md "Round 5")
+- Found by reading, not by a test: round 4's pushed rows bypass RLS and nothing checked their project. Added the
+  check, a unit test, an e2e test with two projects writing concurrently, and mutation M10.
+- My first version of that e2e test sent 200 writes to one run at once and got `429 run_busy` (the per-run queue limit
+  working as designed); the second opened 400 new TCP connections and hit `ConnectTimeout` on Windows port forwarding.
+  Test bugs; now 16 keep-alive connections.
+- Loss-detection page test read the tile one animation frame too early (`'-' == '10'`; state was already 10). Test bug.
+- `DESIGN.md` measured 2 pages (the task says one) since round 1, by `scripts/page_count.py`; my estimate that the
+  note was ~3 pages was wrong (it was 2). Design tightened to 1 page, round-by-round changes moved to CHANGES.md.
+
 ## 6. Mutation check: script bug
 First run reported `SURPRISE green M5`: the expected string was "green but slower", compared to "green".
 Expectation wording fixed; rerun in results/mutations.txt.
