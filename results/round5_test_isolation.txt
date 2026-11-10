@@ -1,0 +1,27 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\pgrga\OneDrive\Документы\taskforwork\.venv\Scripts\python.exe
+hypothesis profile 'default'
+rootdir: C:\Users\pgrga\OneDrive\Документы\taskforwork
+configfile: pytest.ini
+plugins: anyio-4.16.0, hypothesis-6.170.15, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 9 items
+
+tests/test_isolation.py::test_foreign_run_is_indistinguishable_from_missing GET /api/runs/<B>: foreign=404 missing=404
+GET /api/runs/<B>/metrics: foreign=404 missing=404
+GET /api/runs/<B>/metrics?after=0&limit=5000: foreign=404 missing=404
+POST /api/runs/<B>/metrics: foreign=404 missing=404
+GET /api/runs/<B>/conflicts: foreign=404 missing=404
+GET /api/runs/<B>/stream: foreign=404 missing=404
+PASSED
+tests/test_isolation.py::test_list_and_stream_show_only_own_runs PASSED
+tests/test_isolation.py::test_bad_keys PASSED
+tests/test_isolation.py::test_ids_are_not_guessable_and_seq_is_per_run PASSED
+tests/test_isolation.py::test_rls_is_a_second_wall PASSED
+tests/test_isolation.py::test_no_cacheable_responses PASSED
+tests/test_isolation.py::test_errors_do_not_echo_input PASSED
+tests/test_isolation.py::test_timing_foreign_vs_missing [timing] n=300 median foreign=13.823ms missing=13.932ms diff=-0.108ms p90 foreign=15.789 missing=15.925
+PASSED
+tests/test_isolation.py::test_logs_do_not_contain_keys_or_values PASSED
+
+============================= 9 passed in 34.52s ==============================

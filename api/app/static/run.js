@@ -131,8 +131,18 @@ function setText(id, v) {
   return el;
 }
 
+const CONN_STATE = { live: 'live', connecting: 'connecting', reconnecting: 'reconnecting' };
+
+function fmt(v) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return String(v);
+  if (Number.isInteger(v)) return String(v);
+  const a = Math.abs(v);
+  return a !== 0 && (a < 1e-3 || a >= 1e6) ? v.toExponential(3) : String(+v.toPrecision(6));
+}
+
 function render() {
   setText('conn', state.conn);
+  document.getElementById('conn-pill').dataset.state = CONN_STATE[state.conn] || 'bad';
   setText('applied-seq', state.applied);
   setText('server-seq', state.serverSeq ?? '?');
   setText('conflicts', state.conflicts).classList.toggle('bad', state.conflicts > 0);
@@ -156,7 +166,8 @@ function render() {
     for (const [cls, v] of [['key', k], ['count', steps.length], ['max-step', maxStep], ['last-value', m.get(maxStep)], ['sum', sum]]) {
       const td = document.createElement('td');
       td.dataset.col = cls;
-      td.textContent = String(v);
+      if (cls !== 'key') td.className = 'num';
+      td.textContent = String(v);         // exact value (the e2e test compares it with SQL)
       tr.append(td);
     }
     rows.push(tr);
@@ -169,8 +180,16 @@ function render() {
 function chart(k, steps, m) {
   const box = document.createElement('div');
   box.className = 'chart';
-  const title = document.createElement('div');
-  title.textContent = k;
+  const head = document.createElement('div');
+  head.className = 'chart-head';
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = k;                   // metric names are user input: never innerHTML
+  name.title = k;
+  const last = document.createElement('span');
+  last.className = 'last';
+  last.textContent = fmt(m.get(steps[steps.length - 1]));
+  head.append(name, last);
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 100 100');
@@ -183,10 +202,20 @@ function chart(k, steps, m) {
     const y = hi === lo ? 50 : 100 - ((vals[i] - lo) / (hi - lo)) * 100;
     return x.toFixed(2) + ',' + y.toFixed(2);
   });
+  const area = document.createElementNS(ns, 'polygon');
+  const first = pts[0].split(',')[0], lastX = pts[pts.length - 1].split(',')[0];
+  area.setAttribute('points', `${first},100 ${pts.join(' ')} ${lastX},100`);
   const line = document.createElementNS(ns, 'polyline');
   line.setAttribute('points', pts.join(' '));
-  svg.append(line);
-  box.append(title, svg);
+  svg.append(area, line);
+  const foot = document.createElement('div');
+  foot.className = 'chart-foot';
+  const range = document.createElement('span');
+  range.textContent = `step ${x0} → ${x1}`;
+  const minmax = document.createElement('span');
+  minmax.textContent = `min ${fmt(lo)} · max ${fmt(hi)}`;
+  foot.append(range, minmax);
+  box.append(head, svg, foot);
   return box;
 }
 
@@ -197,7 +226,7 @@ async function pollRun() {
     if (res.ok) {
       const r = await res.json();
       document.getElementById('title').textContent = r.name;
-      document.title = r.name;
+      document.title = r.name + ' · tracker';
       state.unconfirmed = r.unconfirmed;
       schedule();
     }

@@ -1,0 +1,22 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\pgrga\OneDrive\Документы\taskforwork\.venv\Scripts\python.exe
+hypothesis profile 'default'
+rootdir: C:\Users\pgrga\OneDrive\Документы\taskforwork
+configfile: pytest.ini
+plugins: anyio-4.16.0, hypothesis-6.170.15, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 9 items
+
+tests/test_round3.py::test_gate_is_work_conserving_for_a_lone_tenant PASSED
+tests/test_round3.py::test_gate_serves_a_quiet_tenant_before_a_hot_tenants_queue PASSED
+tests/test_round3.py::test_gate_max_min_share_under_contention PASSED
+tests/test_round3.py::test_gate_timeout_and_cancel_do_not_leak_slots PASSED
+tests/test_round3.py::test_bucket_allows_burst_then_rate PASSED
+tests/test_round3.py::test_byte_bucket_charges_size_and_keeps_debt PASSED
+tests/test_round3.py::test_run_queue_full_is_visible_only_to_the_owner PASSED
+tests/test_round3.py::test_requests_with_a_rejected_key_do_not_touch_the_db 
+[rejected-key] requests=400 db_transactions=28
+PASSED
+tests/test_round3.py::test_ingest_function_classifies_in_batch_repeats_like_the_old_code PASSED
+
+============================= 9 passed in 12.97s ==============================

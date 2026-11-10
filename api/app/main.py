@@ -636,6 +636,7 @@ async def stream(
                 behind = cursor < tail.first_seq - 1
                 if behind:
                     # Older than the shared in-memory window: page through the DB ourselves.
+                    tc = time.perf_counter()
                     async with db.project_tx(auth.project_id) as conn:
                         recs = await conn.fetch(
                             """SELECT seq, metric_key, step, value FROM metrics
@@ -644,6 +645,7 @@ async def stream(
                         )
                     rows = [Row(r["seq"], r["metric_key"], r["step"], r["value"]) for r in recs]
                     STATS.inc("stream_db_catchup_pages")
+                    TIMERS.add("catchup_page_db", (time.perf_counter() - tc) * 1000)
                 else:
                     rows = tail.after(cursor, STREAM_PAGE)
                 if rows:

@@ -1,0 +1,49 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\pgrga\OneDrive\Документы\taskforwork\.venv\Scripts\python.exe
+hypothesis profile 'default'
+rootdir: C:\Users\pgrga\OneDrive\Документы\taskforwork
+configfile: pytest.ini
+plugins: anyio-4.16.0, hypothesis-6.170.15, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 19 items
+
+tests/test_stress_edges.py::test_write_authenticated_before_rotation_cannot_commit_after_it [race] late write with revoked key -> 401, stored={}
+PASSED
+tests/test_stress_edges.py::test_concurrent_rotations_leave_exactly_one_valid_key [rot2] 10 concurrent rotations: 1 succeeded, active keys now=1
+PASSED
+tests/test_stress_edges.py::test_huge_body_is_rejected_before_it_is_parsed [body] 200 MB -> 413 in 0.5s; api mem before=183.2MiB / 7.758GiB samples=['184.1MiB / 7.758GiB']
+PASSED
+tests/test_stress_edges.py::test_huge_chunked_body_is_cut_off [chunked] 100 MB chunked -> 413 in 0.9s
+PASSED
+tests/test_stress_edges.py::test_resume_cursor_out_of_range[99999999999999999999999-None] [cursor] header='99999999999999999999999' query=None stream=422 history=422
+PASSED
+tests/test_stress_edges.py::test_resume_cursor_out_of_range[-1-None] [cursor] header='-1' query=None stream=422 history=422
+PASSED
+tests/test_stress_edges.py::test_resume_cursor_out_of_range[1e3-None] [cursor] header='1e3' query=None stream=422 history=422
+PASSED
+tests/test_stress_edges.py::test_resume_cursor_out_of_range[1_000-None] [cursor] header='1_000' query=None stream=422 history=200
+PASSED
+tests/test_stress_edges.py::test_resume_cursor_out_of_range[+5-None] [cursor] header='+5' query=None stream=422 history=200
+PASSED
+tests/test_stress_edges.py::test_resume_cursor_out_of_range[None-99999999999999999999999] [cursor] header=None query='99999999999999999999999' stream=422 history=422
+PASSED
+tests/test_stress_edges.py::test_odd_client_timestamps[2026-01-01T00:00:00] [ts] '2026-01-01T00:00:00' -> 200 {"accepted":1,"duplicates":0,"conflicts":0,"last_seq":1}
+PASSED
+tests/test_stress_edges.py::test_odd_client_timestamps[2026-01-01T00:00:00+14:00] [ts] '2026-01-01T00:00:00+14:00' -> 200 {"accepted":1,"duplicates":0,"conflicts":0,"last_seq":1}
+PASSED
+tests/test_stress_edges.py::test_odd_client_timestamps[0001-01-01T00:00:00Z] [ts] '0001-01-01T00:00:00Z' -> 200 {"accepted":1,"duplicates":0,"conflicts":0,"last_seq":1}
+PASSED
+tests/test_stress_edges.py::test_odd_client_timestamps[9999-12-31T23:59:59Z] [ts] '9999-12-31T23:59:59Z' -> 200 {"accepted":1,"duplicates":0,"conflicts":0,"last_seq":1}
+PASSED
+tests/test_stress_edges.py::test_odd_client_timestamps[2026-02-30T00:00:00Z] [ts] '2026-02-30T00:00:00Z' -> 422 {"error":"invalid","details":[{"loc":["body","events",0,"ts"],"msg":"Input should be a valid datetime or date, day value
+PASSED
+tests/test_stress_edges.py::test_odd_client_timestamps[1e10] [ts] '1e10' -> 422 {"error":"invalid","details":[{"loc":["body","events",0,"ts"],"msg":"Input should be a valid datetime or date, input is 
+PASSED
+tests/test_stress_edges.py::test_float_edges_round_trip_exactly [floats] 1e400 -> 422; sse=[-0.0, 5e-324, 1.7976931348623157e+308, -1.7976931348623157e+308, 0.30000000000000004, 1e-300]
+PASSED
+tests/test_stress_edges.py::test_unicode_keys_that_look_identical_are_one_metric [unicode] stored keys=[b'pr\\xe9cision']
+PASSED
+tests/test_stress_edges.py::test_page_is_not_injectable_and_shows_edge_values [xss] window.__xss=None injected_imgs=0 page_errors=[]
+PASSED
+
+============================= 19 passed in 30.70s =============================

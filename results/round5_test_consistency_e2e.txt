@@ -1,0 +1,18 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\pgrga\OneDrive\Документы\taskforwork\.venv\Scripts\python.exe
+hypothesis profile 'default'
+rootdir: C:\Users\pgrga\OneDrive\Документы\taskforwork
+configfile: pytest.ini
+plugins: anyio-4.16.0, hypothesis-6.170.15, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 2 items
+
+tests/test_consistency_e2e.py::test_page_matches_db_under_chaos [producer] 95 requests, 15 failed attempts, 80 acked batches, accepted=648 duplicates=475 conflicts=5
+[page] applied=750 reconnects=5 gaps=0 repeats_ignored=0 conflicts=5
+[producer] points committed in requests whose response was lost: 102
+[compare] db=750 page=750 missing=0 extra=0 wrong_value=0
+PASSED
+tests/test_consistency_e2e.py::test_client_offline_30s_catches_up [offline] offline=41.9s, page during outage: conn=reconnecting applied=20 reconnects=9; caught up in 1.9s (reconnect backoff max 5 s + jitter)
+PASSED
+
+======================== 2 passed in 70.22s (0:01:10) =========================

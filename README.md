@@ -5,6 +5,8 @@ Read [NOTE.md](NOTE.md) first (results and verdict), then [DESIGN.md](DESIGN.md)
 [CHANGES.md](CHANGES.md) (after), [STRESS.md](STRESS.md), [PERF.md](PERF.md). Per-phase server timings: `GET /api/admin/timings` (admin token, per worker);
 `./load/perf_step.ps1 <name> [--jitter]` runs the 50×10 load twice with them.
 
+![Run page](docs/ui-run.png)
+
 ## Run
 ```bash
 docker compose up --build

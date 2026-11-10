@@ -1,0 +1,29 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\pgrga\OneDrive\Документы\taskforwork\.venv\Scripts\python.exe
+hypothesis profile 'default'
+rootdir: C:\Users\pgrga\OneDrive\Документы\taskforwork
+configfile: pytest.ini
+plugins: anyio-4.16.0, hypothesis-6.170.15, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 9 items
+
+tests/test_silent_failures.py::test_events_lost_on_reconnect_with_concurrent_writers [reconnect] writers=16 events=1920 reader_events=1920
+PASSED
+tests/test_silent_failures.py::test_duplicate_batch_sent_concurrently [dups] accepted=100 duplicates=1900
+PASSED
+tests/test_silent_failures.py::test_conflict_counter_counts_distinct_values_not_retries [conflicts] runs.conflicts=2 audit=[{'key': 'k', 'step': 1, 'rejected': 2.0, 'stored': 1.0, 'seen_at': '2026-11-10T10:00:43.135246+00:00'}, {'key': 'k', 'step': 1, 'rejected': 3.0, 'stored': 1.0, 'seen_at': '2026-11-10T10:00:43.459254+00:00'}]
+PASSED
+tests/test_silent_failures.py::test_slow_reader_gets_everything [slow] api mem before=188.6MiB / 7.758GiB while stalled=190.1MiB / 7.758GiB; received=20000
+PASSED
+tests/test_silent_failures.py::test_partial_write_is_impossible_bad_event_mid_batch[bad\x00key] [partial] key='bad\x00key' status=422 body={"error":"invalid","details":[{"loc":["body","events",2,"key"],"msg":"Value error, key must not contain control characters"}]}
+PASSED
+tests/test_silent_failures.py::test_partial_write_is_impossible_bad_event_mid_batch[bad\ud800key] [partial] key='bad\ud800key' status=422 body={"error":"invalid","details":[{"loc":["body","events",2,"key"],"msg":"Input should be a valid string, unable to parse raw data as a unicode string"}]}
+PASSED
+tests/test_silent_failures.py::test_old_key_stops_working_after_rotation [rotate] stream opened with old key closed 0.0s after rotation; events=['hello', 'status', 'revoked']
+PASSED
+tests/test_silent_failures.py::test_lost_notify_does_not_lose_events [listener] killed=4 delivered=50 in 3.2s listener_connects=2 tail_polls=5
+PASSED
+tests/test_silent_failures.py::test_api_crash_mid_ingest_leaves_no_partial_batch [crash] sent=14 acked=10 stored_batches=11 partial=0 stored_without_ack=1
+PASSED
+
+============================= 9 passed in 39.60s ==============================

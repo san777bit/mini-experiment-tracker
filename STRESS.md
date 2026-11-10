@@ -76,6 +76,11 @@ does not wait for responses) is not slowed by the 1 s delay. Both need a limiter
 not investigated). 1.9 MB bodies: victim read p99 43 / 110 ms (round 3: 25-82). Isolation did not regress beyond
 noise, but the target I set (victim p99 ≤ 3× baseline, ~30 ms) is not met (`results/stress_*_round4.txt`).
 
+## Round 5 re-measure of #13 (100k-point run)
+The page now takes 9.3-11.8 s to sync (round 2: 5.3 s). Round-2 code on the same machine today: 8.9-9.9 s, so this
+is the machine, not the code. Server-side catch-up alone (no browser): 0.72-0.78 s for 100 000 events (round-2 code
+0.91 s). One earlier reading of 3.9 s right after a WSL restart did not reproduce.
+
 ## How to run
 ```bash
 python -m pytest tests/test_stress_edges.py tests/test_stress_heavy.py -s

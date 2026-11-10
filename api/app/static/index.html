@@ -3,34 +3,85 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Runs</title>
+<title>Runs · tracker</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="mark"><svg viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,7 9,9.5 14,3"/></svg></span>
+    tracker
+  </a>
+  <span class="spacer"></span>
+  <span class="hint" id="key-hint"></span>
+</header>
 <main>
-  <h1>Runs</h1>
-  <form id="key-form">
-    <label>API key <input id="key" type="password" autocomplete="off" required></label>
-    <button>Use key</button>
-  </form>
-  <form id="new-run" hidden>
-    <label>New run <input id="run-name" required maxlength="200"></label>
-    <button>Create</button>
-  </form>
-  <p id="msg" role="status"></p>
-  <table id="runs" hidden>
-    <thead><tr><th>Name</th><th>Points</th><th>Conflicts</th><th>Created</th></tr></thead>
-    <tbody></tbody>
-  </table>
+  <div class="page-head">
+    <div class="grow">
+      <p class="eyebrow">Experiment tracker</p>
+      <h1>Every point, <span class="accent">exactly once.</span></h1>
+      <p class="lede">Runs of your project, streamed live. What you see is what is stored.</p>
+    </div>
+  </div>
+
+  <div class="stack">
+    <section class="card" id="key-card">
+      <div class="card-head"><h2>Project key</h2></div>
+      <div class="card-body">
+        <form id="key-form">
+          <label class="field">API key (kept in this tab only, sent in a header)
+            <input id="key" type="password" autocomplete="off" placeholder="sk_..." required>
+          </label>
+          <button>Use key</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="card" id="runs-card" hidden>
+      <div class="card-head">
+        <h2>Runs</h2>
+        <form id="new-run" hidden>
+          <input id="run-name" required maxlength="200" placeholder="new run name">
+          <button>Create run</button>
+        </form>
+        <button class="ghost" id="change-key" type="button">Change key</button>
+      </div>
+      <div class="table-wrap">
+        <table id="runs" hidden>
+          <thead><tr><th>Name</th><th class="num">Points</th><th class="num">Conflicts</th><th class="num">Created</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty" id="no-runs" hidden>No runs yet. Create one, then send metrics to it.</p>
+    </section>
+    <p id="msg" role="status"></p>
+  </div>
 </main>
 <script src="/static/common.js"></script>
 <script>
 const msg = document.getElementById('msg');
 const keyInput = document.getElementById('key');
 
+function showKeyForm(text, isError) {
+  document.getElementById('key-card').hidden = false;
+  document.getElementById('runs-card').hidden = true;
+  document.getElementById('key-hint').textContent = '';
+  msg.textContent = text || '';
+  msg.classList.toggle('error', !!isError);
+}
+
+function ago(iso) {
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + ' min ago';
+  if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+  return new Date(iso).toLocaleDateString();
+}
+
 async function load() {
   const res = await api('/api/runs');
-  if (res.status === 401) { msg.textContent = 'Key rejected.'; return; }
+  if (res.status === 401) { showKeyForm('Key rejected.', true); return; }
+  if (!res.ok) { msg.textContent = 'Server error ' + res.status + '.'; msg.classList.add('error'); return; }
   const { runs } = await res.json();
   const tbody = document.querySelector('#runs tbody');
   tbody.replaceChildren(...runs.map(r => {
@@ -38,29 +89,50 @@ async function load() {
     tr.dataset.testid = 'run-row';
     const a = document.createElement('a');
     a.href = '/runs/' + r.id;
-    a.textContent = r.name;
-    const cells = [a, String(r.last_seq), String(r.conflicts), new Date(r.created_at).toLocaleString()];
-    for (const c of cells) {
+    a.textContent = r.name;                       // textContent only: names are user input
+    const conflicts = document.createElement('span');
+    conflicts.className = r.conflicts > 0 ? 'badge warn' : 'badge';
+    conflicts.textContent = String(r.conflicts);
+    const created = document.createElement('span');
+    created.textContent = ago(r.created_at);
+    created.title = new Date(r.created_at).toLocaleString();
+    const cells = [[a, ''], [String(r.last_seq), 'num'], [conflicts, 'num'], [created, 'num']];
+    for (const [c, cls] of cells) {
       const td = document.createElement('td');
+      if (cls) td.className = cls;
       typeof c === 'string' ? (td.textContent = c) : td.append(c);
       tr.append(td);
     }
     return tr;
   }));
-  document.getElementById('runs').hidden = false;
+  const key = getKey();
+  document.getElementById('key-hint').textContent = 'key ' + key.slice(0, 7) + '…';   // the same 7 chars the DB keeps as `prefix`
+  document.getElementById('key-card').hidden = true;
+  document.getElementById('runs-card').hidden = false;
+  document.getElementById('runs').hidden = runs.length === 0;
+  document.getElementById('no-runs').hidden = runs.length !== 0;
   document.getElementById('new-run').hidden = false;
-  msg.textContent = runs.length ? '' : 'No runs yet.';
+  msg.textContent = '';
+  msg.classList.remove('error');
 }
 
 document.getElementById('key-form').addEventListener('submit', e => {
   e.preventDefault();
   setKey(keyInput.value.trim());
+  keyInput.value = '';
   load();
+});
+document.getElementById('change-key').addEventListener('click', () => {
+  setKey('');
+  showKeyForm('');
+  keyInput.focus();
 });
 document.getElementById('new-run').addEventListener('submit', async e => {
   e.preventDefault();
-  const name = document.getElementById('run-name').value.trim();
-  await api('/api/runs', { method: 'POST', body: JSON.stringify({ name }) });
+  const input = document.getElementById('run-name');
+  const name = input.value.trim();
+  const res = await api('/api/runs', { method: 'POST', body: JSON.stringify({ name }) });
+  if (res.ok) input.value = '';
   load();
 });
 if (getKey()) load();

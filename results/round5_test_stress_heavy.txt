@@ -1,0 +1,15 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\pgrga\OneDrive\Документы\taskforwork\.venv\Scripts\python.exe
+hypothesis profile 'default'
+rootdir: C:\Users\pgrga\OneDrive\Документы\taskforwork
+configfile: pytest.ini
+plugins: anyio-4.16.0, hypothesis-6.170.15, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 2 items
+
+tests/test_stress_heavy.py::test_postgres_restart_under_load [dbrestart] restart took 1.1s; first acked write 0.0s after DB back; failed attempts=0; page synced 0.0s after last write; reconnects=0 gaps=0
+PASSED
+tests/test_stress_heavy.py::test_long_run_page_open_and_stay_live [long] 100000 points loaded via API in 9.4s; page synced in 9.5s; JS heap=10 MiB; live lag samples (events behind)=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; final live sync 5.4s; long tasks={'n': 88, 'worst': 88}
+PASSED
+
+======================== 2 passed in 143.17s (0:02:23) ========================

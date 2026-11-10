@@ -1,0 +1,22 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\pgrga\OneDrive\Документы\taskforwork\.venv\Scripts\python.exe
+hypothesis profile 'default'
+rootdir: C:\Users\pgrga\OneDrive\Документы\taskforwork
+configfile: pytest.ini
+plugins: anyio-4.16.0, hypothesis-6.170.15, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 11 items
+
+tests/test_round4.py::test_push_appends_contiguous_rows_and_publishes PASSED
+tests/test_round4.py::test_push_with_a_hole_is_refused_and_falls_back_to_the_db PASSED
+tests/test_round4.py::test_push_ignores_rows_it_already_has PASSED
+tests/test_round4.py::test_push_none_means_read_the_db PASSED
+tests/test_round4.py::test_notify_payload_round_trip_keeps_values_exact PASSED
+tests/test_round4.py::test_own_notify_is_ignored_and_bad_payload_wakes_everyone PASSED
+tests/test_round4.py::test_too_big_batch_is_sent_as_a_hint PASSED
+tests/test_round4.py::test_pushed_rows_claiming_another_project_never_reach_the_tail PASSED
+tests/test_round4.py::test_pushed_rows_reach_only_their_own_project_stream PASSED
+tests/test_round4.py::test_revocation_from_another_process_closes_streams_and_drops_cached_auth PASSED
+tests/test_round4.py::test_points_the_server_never_received_are_visible_and_alertable PASSED
+
+============================= 11 passed in 18.03s =============================

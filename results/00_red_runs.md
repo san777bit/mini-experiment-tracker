@@ -85,6 +85,16 @@ commits. After moving NOTIFY after commit: 499.5 events/s (results/load_50x10_4w
 - `DESIGN.md` measured 2 pages (the task says one) since round 1, by `scripts/page_count.py`; my estimate that the
   note was ~3 pages was wrong (it was 2). Design tightened to 1 page, round-by-round changes moved to CHANGES.md.
 
+## Round 5 re-measure
+- The tests' printed evidence (e.g. `db=750 page=750 ...`) was not in `results/`: `full_suite.txt` is `-q` without
+  `-s`. Re-run with `-s -v` into `results/round5_test_*.txt`.
+- `[long]` 100k-point page sync 9.3-11.8 s vs 5.3 s in round 2. Same test on round-2 code today: 8.9-9.9 s (machine).
+  A server-only catch-up reading of 3.9 s (vs 0.9 s on round-2 code) did not reproduce: 0.72-0.78 s on re-measure.
+- Found by hand in the browser, not by any test: the "New run" form was visible before a key was entered.
+  `form { display: flex }` overrides the `hidden` attribute. Fixed with `[hidden] { display: none !important; }`.
+- Docker Desktop lost WSL mid-run once ("WSL is unresponsive"); the suite failed on connection errors; rerun after
+  `wsl --shutdown` and restart.
+
 ## 6. Mutation check: script bug
 First run reported `SURPRISE green M5`: the expected string was "green but slower", compared to "green".
 Expectation wording fixed; rerun in results/mutations.txt.
